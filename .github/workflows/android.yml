@@ -52,6 +52,9 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      - name: Check project (manifest and Android intent filters)
+        run: node scripts/check.mjs
+
       - name: Check settings
         run: |
           if [ -z "$PWA_HOST" ]; then
