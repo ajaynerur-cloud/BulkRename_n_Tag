@@ -46,6 +46,8 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # Only platform-tools: Google removed the legacy 'tools' package that this action requests by default.
+      # The Android Gradle plugin downloads the SDK platform and build-tools it needs by itself.
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -98,7 +100,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'nametag' }}
         run: |
           mkdir -p dist
-          APK=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          APK=$(ls android/app/build/outputs/apk/release/*.apk | grep -v -- '-unsigned' | head -1 || true)
+          if [ -z "$APK" ]; then echo "::error::Only an unsigned APK was produced; Android refuses to install it ('problem parsing the package'). Check the signing step."; ls -la android/app/build/outputs/apk/release/; exit 1; fi
+          # Refuse to publish an APK that Android would not install.
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | head -8
           AAB=$(ls android/app/build/outputs/bundle/release/*.aab | head -1)
           cp "$APK" "dist/NameTag-${ANDROID_VERSION_NAME}.apk"
           cp "$AAB" "dist/NameTag-${ANDROID_VERSION_NAME}.aab"
@@ -109,7 +115,7 @@ jobs:
           {
             echo "## NameTag ${ANDROID_VERSION_NAME}"
             echo ""
-            echo "Download the APK from the **Artifacts** section below (NameTag-android)."
+            echo "The APK is attached to a GitHub Release (link below) for direct download on your phone. The Artifacts zip holds the same files."
             echo ""
             echo "- Site: https://${HOST}"
             echo "- Package: \`${PKG}\`"
@@ -134,11 +140,23 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: GitHub Release (tags only)
-        if: github.ref_type == 'tag'
+      # Tag builds become a normal release; manual builds a pre-release. Either way the APK is a direct
+      # download (run artifacts always arrive as .zip, which Android cannot install).
+      - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
+          name: ${{ github.ref_type == 'tag' && format('NameTag {0}', github.ref_name) || format('NameTag test build {0} ({1})', github.run_number, env.ANDROID_VERSION_NAME) }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/NameTag-*.apk
             dist/NameTag-*.aab
           generate_release_notes: true
+
+      - name: Download link
+        run: |
+          T="${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Install on your phone" >> "$GITHUB_STEP_SUMMARY"
+          echo "Open this link on the phone and tap the .apk: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${T}" >> "$GITHUB_STEP_SUMMARY"
