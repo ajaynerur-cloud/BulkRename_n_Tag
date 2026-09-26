@@ -1,15 +1,23 @@
 {
   "name": "nametag",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Offline PWA: bulk renamer for files, folders and ZIPs with pattern analysis and JSON undo, plus an audio tag editor with backups.",
+  "description": "Offline PWA and Android app: bulk renamer for files, folders and ZIPs with pattern analysis and portable JSON undo, extension renamer, and an audio tag editor with backups.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "npx --yes serve@14 public -l 5173",
     "test": "node tests/renamer.test.mjs && node tests/portable.test.mjs && node tests/tags.test.mjs",
     "check": "node scripts/check.mjs",
-    "build": "node scripts/stamp-version.mjs"
+    "build": "node scripts/stamp-version.mjs",
+    "icons": "node scripts/icons/build-icons.mjs",
+    "android:generate": "node scripts/android/generate-project.mjs"
+  },
+  "devDependencies": {
+    "@bubblewrap/core": "^1.25.0",
+    "@resvg/resvg-js": "^2.6.2"
   }
 }

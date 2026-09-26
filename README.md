@@ -123,13 +123,52 @@ This applies to all three tools: renamer, extension renamer and tag editor. The 
 
 All eight formats are covered by `tests/tags.test.mjs`. Outputs were checked with ffmpeg (clean decode) and mutagen (tags readable).
 
+## Android app (APK) from Git
+
+The repository builds a real Android app with GitHub Actions: no Android Studio and no computer needed, so the whole process works from a phone browser. The app is a Trusted Web Activity. It opens your Render site full screen with its own icon, splash screen, launcher shortcuts (Renamer, Tag editor, History), and an entry in the Android **share sheet**: share audio, photos or a ZIP from any app and it opens in NameTag.
+
+**One-time setup**
+1. **Deploy to Render first** (see above) and note the domain, e.g. `nametag-abcd.onrender.com`.
+2. **Set the site address.** On GitHub, open Settings, then Secrets and variables, Actions, then the Variables tab. Add `PWA_HOST` with that domain: no `https://`, no slash. Optionally add `ANDROID_PACKAGE_ID` (default `app.nametag.twa`).
+3. **Create the signing key, once.** Go to Actions, choose "Android signing key (run once)", and press Run workflow. Download the `nametag-signing-key` artifact from the run. Add the four values from `SECRETS.txt` as repository **Secrets**. Keep `nametag.keystore` safe, because every future update must be signed with the same key.
+4. **Build.** Go to Actions, choose "Android APK", and press Run workflow. Or push a tag such as `v1.2.0` to also get a GitHub Release. Download `NameTag-<version>.apk` from the run's artifacts and install it. Android asks you to allow installing from your browser or file manager.
+5. **Remove the browser bar.** The build summary shows the certificate SHA-256 fingerprint. In Render, add the environment variable `ANDROID_CERT_SHA256` with that value and redeploy. The build step then publishes `/.well-known/assetlinks.json`, which proves the app and the site belong together, and the app opens without the address bar. Open `https://<your-domain>/.well-known/assetlinks.json` to check. For Google Play, also add Play's app-signing fingerprint (comma-separated).
+
+**Build outputs**
+- **APK:** installs directly on a phone.
+- **AAB:** for Google Play upload.
+- **`assetlinks.json`:** ready to use.
+
+Every build gets an increasing version code automatically, so updates install over the previous version when they are signed with the same key.
+
+Without the signing secrets, the workflow still builds, using a throwaway key. That is good for a quick test, but the browser bar stays and later builds cannot update that install.
+
+**On Android**
+- **Renaming and tag saving use the ZIP workflow.** Android's browser engine cannot write to folders, so open or share files and get a ZIP back.
+- **Everything works offline** after the first launch.
+- **Undo files travel with the files.** Restore works across phone and computer in both directions (see "Restoring on another computer").
+
+**Files involved**
+- **`android/`** is the generated Gradle project. Host, package id, version and signing come from environment variables, so it never needs editing for your domain.
+- **`scripts/android/twa-config.json`** holds the defaults: package id, colours, version.
+- **`scripts/android/generate-project.mjs`** regenerates `android/` with Bubblewrap after icon or manifest changes (`npm install && npm run android:generate`).
+- **`.github/workflows/android.yml`** runs the build, and `android-signing-key.yml` creates the one-time key.
+
+## App icon
+
+The icon was drawn for NameTag: a name tag carrying a line of text, a highlighter-yellow edit and a text cursor, in the app's cobalt, highlighter yellow and ink colours. It is rendered from one source, `scripts/icons/icon-src.mjs`, by `npm run icons`, which produces:
+
+- **Web:** `icon-48` to `icon-512`, `maskable-192` and `maskable-512` (full-bleed, artwork inside the 80% safe zone), `monochrome-96` and `monochrome-512`, SVG favicon plus 16 and 32 px PNGs, and the Apple touch icon.
+- **Android:** adaptive launcher layers (background, foreground and monochrome for Android 13+ themed icons) at every density, the legacy launcher icon, the splash image, shortcut icons, and a 512 px Play Store icon (`android/store/`).
+
 ## Browser support
 
 | Browser | Rename in place | Save tags in place | Everything else |
 | --- | --- | --- | --- |
 | Chrome, Edge, Opera, Brave (desktop) | Yes | Yes | Yes |
 | Firefox, Safari | No: ZIP in, renamed ZIP out | No: edited files download as a ZIP | Yes |
-| Android, iOS | No: same ZIP workflow | No: ZIP download | Yes, installable |
+| Android (browser or the APK) | No: same ZIP workflow | No: ZIP download | Yes, plus share-to-NameTag in the APK |
+| iOS | No: same ZIP workflow | No: ZIP download | Yes, installable |
 
 ## Known limitations
 
@@ -150,7 +189,10 @@ public/
   js/renamer/                rules, analyzer, presets, extensions, renamer-ui
   js/tagger/                 bytes, model, id3, mpeg, flac, vorbis, ogg, mp4, riff, index, tools, online, tagger-ui
   vendor/jszip.min.js, fonts/ (Atkinson Hyperlegible Next and Mono, OFL), icons/
-scripts/                     stamp-version.mjs (Render build), check.mjs
+scripts/                     stamp-version.mjs (Render build: SW version + assetlinks.json), check.mjs,
+                             icons/ (icon artwork + renderer), android/ (TWA config + project generator)
+android/                     Android (Trusted Web Activity) Gradle project, built by GitHub Actions
+.github/workflows/           android.yml (APK/AAB), android-signing-key.yml (one-time key), test.yml
 tests/                       renamer.test.mjs, portable.test.mjs, tags.test.mjs, fixtures/
 render.yaml
 ```

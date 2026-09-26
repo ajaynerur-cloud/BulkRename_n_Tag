@@ -6,6 +6,14 @@ services:
     buildCommand: node scripts/stamp-version.mjs
     staticPublishPath: ./public
     pullRequestPreviewsEnabled: false
+    envVars:
+      # Android app (optional). Package id must match the APK (see scripts/android/twa-config.json).
+      - key: ANDROID_PACKAGE_ID
+        value: app.nametag.twa
+      # SHA-256 fingerprint(s) of the Android signing certificate, comma-separated. Shown by the
+      # "Android APK" GitHub workflow. When set, /.well-known/assetlinks.json is published.
+      - key: ANDROID_CERT_SHA256
+        sync: false
     headers:
       - path: /*
         name: X-Content-Type-Options
@@ -28,6 +36,12 @@ services:
       - path: /manifest.webmanifest
         name: Content-Type
         value: application/manifest+json
+      - path: /.well-known/assetlinks.json
+        name: Content-Type
+        value: application/json
+      - path: /.well-known/assetlinks.json
+        name: Access-Control-Allow-Origin
+        value: "*"
     routes:
       - type: rewrite
         source: /*

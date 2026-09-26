@@ -1,0 +1,114 @@
+{
+  "packageId": "app.nametag.twa",
+  "host": "nametag.onrender.com",
+  "name": "NameTag",
+  "launcherName": "NameTag",
+  "display": "standalone",
+  "themeColor": "#2248C8",
+  "themeColorDark": "#151A22",
+  "navigationColor": "#EEF0F2",
+  "navigationColorDark": "#151A22",
+  "navigationDividerColor": "#EEF0F2",
+  "navigationDividerColorDark": "#151A22",
+  "backgroundColor": "#EEF0F2",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://nametag.onrender.com/icons/icon-512.png",
+  "maskableIconUrl": "https://nametag.onrender.com/icons/maskable-512.png",
+  "monochromeIconUrl": "https://nametag.onrender.com/icons/monochrome-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./nametag.keystore",
+    "alias": "nametag"
+  },
+  "appVersionName": "1.1.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Renamer",
+      "shortName": "Rename",
+      "url": "https://nametag.onrender.com/#renamer",
+      "chosenIconUrl": "https://nametag.onrender.com/icons/icon-96.png"
+    },
+    {
+      "name": "Tag editor",
+      "shortName": "Tags",
+      "url": "https://nametag.onrender.com/#tagger",
+      "chosenIconUrl": "https://nametag.onrender.com/icons/icon-96.png"
+    },
+    {
+      "name": "History",
+      "shortName": "History",
+      "url": "https://nametag.onrender.com/#history",
+      "chosenIconUrl": "https://nametag.onrender.com/icons/icon-96.png"
+    }
+  ],
+  "generatorApp": "NameTag scripts/android",
+  "webManifestUrl": "https://nametag.onrender.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://nametag.onrender.com/",
+  "minSdkVersion": 23,
+  "shareTarget": {
+    "action": "https://nametag.onrender.com/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "audio/*",
+            "image/*",
+            "video/*",
+            "application/zip",
+            "application/pdf",
+            "text/*",
+            "*/*",
+            ".mp3",
+            ".flac",
+            ".m4a",
+            ".ogg",
+            ".opus",
+            ".wav",
+            ".aiff",
+            ".zip"
+          ]
+        }
+      ]
+    }
+  },
+  "orientation": "default",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [
+    {
+      "actionUrl": "https://nametag.onrender.com/#tagger",
+      "mimeTypes": [
+        "audio/*"
+      ]
+    },
+    {
+      "actionUrl": "https://nametag.onrender.com/#renamer",
+      "mimeTypes": [
+        "application/zip"
+      ]
+    }
+  ],
+  "launchHandlerClientMode": "navigate-existing",
+  "displayOverride": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "appVersion": "1.1.0"
+}
