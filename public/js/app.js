@@ -6,6 +6,7 @@ import { summarizeManifest } from './core/manifest.js';
 import { listHistory, deleteHistory, clearHistory } from './core/history.js';
 import * as renamer from './renamer/renamer-ui.js';
 import * as tagger from './tagger/tagger-ui.js';
+import { AUDIO_EXT } from './tagger/index.js';
 
 const VIEWS = ['renamer', 'tagger', 'history', 'guide'];
 const $ = (s) => document.querySelector(s);
@@ -13,6 +14,7 @@ let current = null;
 
 /* ------------------------------------------------------------------ routing */
 function route() {
+  if (location.hash === '#share') { receiveShared(); return; }
   const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'renamer';
   if (v === current) return;
   current = v;
@@ -80,6 +82,31 @@ function initDrop() {
     e.preventDefault();
     try { if (current === 'renamer') await renamer.openDropped(e.dataTransfer); else await tagger.openDropped(e.dataTransfer); } catch (err) { toast(`Could not open: ${err.message}`, { type: 'error' }); }
   });
+}
+
+/* ------------------------------------------------------------------ Android / OS share sheet */
+// Files shared to NameTag (Web Share Target) are parked by the service worker in a cache, then opened here:
+// audio goes to the Tag editor, anything else (or a ZIP) to the Renamer.
+async function receiveShared() {
+  let files = [];
+  try {
+    const cache = await caches.open('nametag-share');
+    for (const req of await cache.keys()) {
+      const res = await cache.match(req);
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get('x-name') || 'shared-file');
+      files.push(new File([blob], name, { type: blob.type, lastModified: Number(res.headers.get('x-modified')) || Date.now() }));
+    }
+    await caches.delete('nametag-share');
+  } catch { /* no cache API */ }
+  const audio = files.length && files.every((f) => AUDIO_EXT.test(f.name));
+  const target = audio ? 'tagger' : 'renamer';
+  history.replaceState(null, '', `#${target}`);
+  current = null;
+  route();
+  if (!files.length) { toast('Nothing was received. Share one or more files to NameTag.', { type: 'warn' }); return; }
+  const dt = { items: [], files };
+  try { await (audio ? tagger : renamer).openDropped(dt); toast(`Opened ${files.length} shared file${files.length === 1 ? '' : 's'}.`, { type: 'success' }); } catch (e) { toast(`Could not open the shared files: ${e.message}`, { type: 'error' }); }
 }
 
 /* ------------------------------------------------------------------ history */

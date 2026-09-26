@@ -109,7 +109,8 @@ dd .tape { white-space: normal; word-break: break-all; text-transform: none; let
   background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
-.brand { text-decoration: none; flex: none; }
+.brand { text-decoration: none; flex: none; display: inline-flex; align-items: center; gap: 8px; }
+.brand-icon { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .tabs-main { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; }
 .tabs-main a {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;

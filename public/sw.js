@@ -12,7 +12,7 @@ const ASSETS = [
   'fonts/next-latin-400.woff2', 'fonts/next-latin-600.woff2', 'fonts/next-latin-800.woff2',
   'fonts/next-latin-ext-400.woff2', 'fonts/next-latin-ext-600.woff2', 'fonts/next-latin-ext-800.woff2',
   'fonts/mono-latin-400.woff2', 'fonts/mono-latin-600.woff2', 'fonts/mono-latin-ext-400.woff2', 'fonts/mono-latin-ext-600.woff2',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
+  'icons/icon.svg', 'icons/favicon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-192.png', 'icons/maskable-512.png', 'icons/monochrome-96.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'icons/favicon-16.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -30,6 +30,22 @@ self.addEventListener('message', (e) => { if (e.data?.type === 'SKIP_WAITING') s
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
+  // Web Share Target (Android share sheet): park the shared files, then open the app on #share.
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share-target')) {
+    e.respondWith((async () => {
+      try {
+        const form = await req.formData();
+        const files = form.getAll('files').filter((f) => f && typeof f === 'object' && 'name' in f);
+        await caches.delete('nametag-share');
+        const cache = await caches.open('nametag-share');
+        await Promise.all(files.map((f, i) => cache.put(new Request(new URL(`__share/${i}`, self.registration.scope).href), new Response(f, {
+          headers: { 'content-type': f.type || 'application/octet-stream', 'x-name': encodeURIComponent(f.name), 'x-modified': String(f.lastModified || Date.now()) },
+        }))));
+      } catch { /* fall through to the app, which reports that nothing arrived */ }
+      return Response.redirect(new URL('./#share', self.registration.scope).href, 303);
+    })());
+    return;
+  }
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // MusicBrainz, LRCLIB, Cover Art Archive go straight to the network

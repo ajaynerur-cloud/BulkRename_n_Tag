@@ -6,10 +6,14 @@
 <title>NameTag: bulk renamer and audio tag editor</title>
 <meta name="description" content="Rename files, folders and ZIP contents in bulk with a pattern analyser and one-click undo. Edit MP3, FLAC, M4A, OGG, Opus, WAV and AIFF tags with backups. Runs offline in your browser.">
 <meta name="theme-color" content="#EEF0F2" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NameTag">
+<meta name="application-name" content="NameTag">
 <meta name="theme-color" content="#151A22" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/favicon-16.png" sizes="16x16" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preload" href="fonts/next-latin-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="css/app.css">
@@ -91,7 +95,7 @@
 </svg>
 <a class="skip" href="#main">Skip to content</a>
 <header class="app-head">
-  <a class="brand" href="#renamer" aria-label="NameTag home"><span class="tape tape-logo" aria-hidden="true">NameTag</span></a>
+  <a class="brand" href="#renamer" aria-label="NameTag home"><img class="brand-icon" src="icons/favicon.svg" width="30" height="30" alt=""><span class="tape tape-logo" aria-hidden="true">NameTag</span></a>
   <nav class="tabs-main" aria-label="Sections">
     <a href="#renamer" data-view="renamer"><svg class="ic" aria-hidden="true"><use href="#i-text-cursor-input"/></svg><span>Renamer</span></a>
     <a href="#tagger" data-view="tagger"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Tag editor</span></a>
@@ -161,6 +165,7 @@
           <tr><td>Chrome, Edge, Opera, Brave on a computer</td><td>Yes, files and folders</td><td>Yes</td><td>Yes</td></tr>
           <tr><td>Firefox, Safari</td><td>No: import or open a ZIP, get a renamed ZIP back</td><td>No: edited files download as a ZIP</td><td>Yes</td></tr>
           <tr><td>Phones and tablets</td><td>No: same ZIP workflow</td><td>No: ZIP download</td><td>Yes</td></tr>
+          <tr><td>NameTag Android app</td><td>No: same ZIP workflow</td><td>No: ZIP download</td><td>Yes, and you can share files to NameTag from any app</td></tr>
         </tbody>
       </table></div>
       <p class="muted">Renaming a folder in place needs a recent Chromium browser. If it refuses, turn on “Rename folders by copying” in Filters and options. Renamed files get a new modified date on some systems.</p>
