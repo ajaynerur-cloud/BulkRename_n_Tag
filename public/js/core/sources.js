@@ -250,7 +250,7 @@ export class ZipRoot extends BaseRoot {
         return { saved: true, message: `Saved ${this.name} in place.` };
       } catch (e) { console.warn('in-place zip save failed', e); }
     }
-    download?.(blob, this.name.replace(/(\.zip)?$/i, '') + (this.fileHandle ? '' : '-renamed') + '.zip');
+    await download?.(blob, this.name.replace(/(\.zip)?$/i, '') + (this.fileHandle ? '' : '-renamed') + '.zip');
     this.dirty = false;
     return { saved: true, downloaded: true, message: 'Downloaded the updated ZIP.' };
   }
@@ -321,7 +321,7 @@ export class MemRoot extends BaseRoot {
   }
   async finalize({ onProgress, download } = {}) {
     const blob = await this.toBlob(onProgress);
-    download?.(blob, `${this.name}-nametag.zip`);
+    await download?.(blob, `${this.name}-nametag.zip`);
     this.dirty = false;
     return { saved: true, downloaded: true, message: 'Downloaded a ZIP with the result (imported files cannot be changed in place).' };
   }
@@ -369,7 +369,7 @@ export class FilesRoot extends BaseRoot {
     if (!this.pending.size) return { saved: true, message: 'Saved.' };
     const zip = new globalThis.JSZip();
     for (const [p, f] of this.pending) zip.file(p, f);
-    download?.(await zip.generateAsync({ type: 'blob' }), 'nametag-files.zip');
+    await download?.(await zip.generateAsync({ type: 'blob' }), 'nametag-files.zip');
     this.pending.clear(); this.dirty = false;
     return { saved: true, downloaded: true, message: 'Downloaded changed files as a ZIP.' };
   }

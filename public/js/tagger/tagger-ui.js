@@ -670,7 +670,7 @@ async function save() {
   if (errors.length) manifest.errors = errors;
   try { await writeManifest(); } catch { /* ignore */ }
   if (root.kind === 'zip') { p.set(0, 100, 'Building ZIP…'); try { await root.finalize({ onProgress: (pc) => p.set(Math.round(pc), 100, 'Building ZIP…'), download }); } catch (e) { errors.push(`ZIP: ${e.message}`); } }
-  if (zip) { p.set(0, 100, 'Building ZIP…'); download(await zip.generateAsync({ type: 'blob' }, (m) => p.set(Math.round(m.percent), 100, 'Building ZIP…')), `${root.name}-tagged.zip`); }
+  if (zip) { p.set(0, 100, 'Building ZIP…'); await download(await zip.generateAsync({ type: 'blob' }, (m) => p.set(Math.round(m.percent), 100, 'Building ZIP…')), `${root.name}-tagged.zip`); }
   p.close();
   await addHistory({ id: manifest.id, type: 'tags', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: manifest.status });
   if (errors.length) openDialog({ title: `${errors.length} file(s) could not be saved`, body: h('ul', { class: 'mono small' }, errors.map((e) => h('li', null, e))) });

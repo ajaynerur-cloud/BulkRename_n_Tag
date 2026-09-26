@@ -256,13 +256,63 @@ export class VirtualList {
 }
 
 // ---------- files ----------
+/** True inside the Android app (Capacitor), where the web view cannot follow download links. */
+export const isNativeApp = () => !!window.Capacitor?.isNativePlatform?.();
+
 export function download(blob, filename) {
+  if (isNativeApp()) return nativeSave(blob, filename);
   const url = URL.createObjectURL(blob);
   const a = h('a', { href: url, download: filename, style: 'display:none' });
   document.body.append(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return Promise.resolve(true);
+}
+
+/** base64 of a Blob slice (3-byte aligned chunks keep the pieces concatenable). */
+async function sliceBase64(blob, start, end) {
+  const buf = new Uint8Array(await blob.slice(start, end).arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * Android app: write the file to Documents/NameTag (visible in the Files app), written in chunks so large
+ * ZIPs do not need one huge string, then offer the share sheet. Falls back to the app cache + share sheet
+ * when public storage is not allowed.
+ */
+async function nativeSave(blob, filename) {
+  const P = window.Capacitor?.Plugins || {};
+  const FS = P.Filesystem;
+  const safe = String(filename).replace(/[\\/:*?"<>|]+/g, '_');
+  if (!FS) { toast('Saving is not available in this build.', { type: 'error' }); return false; }
+  const CHUNK = 3 * 1024 * 1024;
+  const writeTo = async (directory, path) => {
+    for (let pos = 0, first = true; pos < blob.size || first; pos += CHUNK, first = false) {
+      const data = await sliceBase64(blob, pos, Math.min(blob.size, pos + CHUNK));
+      if (first) await FS.writeFile({ path, data, directory, recursive: true });
+      else await FS.appendFile({ path, data, directory });
+    }
+    return (await FS.getUri({ path, directory })).uri;
+  };
+  const share = async (uri) => { try { await P.Share?.share({ title: safe, files: [uri], dialogTitle: `Share ${safe}` }); } catch { /* dismissed */ } };
+  try {
+    try { const st = await FS.checkPermissions(); if (st.publicStorage !== 'granted') await FS.requestPermissions(); } catch { /* Android 11+: not needed */ }
+    const uri = await writeTo('DOCUMENTS', `NameTag/${safe}`);
+    toast(`Saved to Documents/NameTag/${safe}`, { type: 'success', timeout: 9000, action: P.Share ? { label: 'Share', onClick: () => share(uri) } : null });
+    return true;
+  } catch (e) {
+    try {
+      const uri = await writeTo('CACHE', `exports/${safe}`);
+      await share(uri);
+      return true;
+    } catch (e2) {
+      toast(`Could not save ${safe}: ${e2.message || e.message}`, { type: 'error' });
+      return false;
+    }
+  }
 }
 
 /** Save with the native picker when available, otherwise download. Returns false when the person cancels. */
@@ -281,11 +331,15 @@ export async function saveBlob(blob, suggestedName, { description = 'File', acce
       console.warn('Save picker failed, downloading instead', e);
     }
   }
-  download(blob, suggestedName);
-  return true;
+  return download(blob, suggestedName);
 }
 
 export function pickFiles({ accept = '', multiple = true, directory = false } = {}) {
+  if (directory && isNativeApp()) {
+    // Android's file chooser cannot return a folder; pick several files (or a ZIP) instead.
+    toast('Android cannot pick a whole folder here. Select all the files inside it, or open a ZIP of the folder.', { timeout: 8000 });
+    directory = false; multiple = true;
+  }
   return new Promise((resolve) => {
     const input = h('input', { type: 'file', accept, multiple, style: 'display:none' });
     if (directory) { input.webkitdirectory = true; input.setAttribute('webkitdirectory', ''); }

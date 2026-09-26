@@ -1,5 +1,5 @@
 // App shell: routing, theme, service worker updates, install prompt, drag and drop, and the History view.
-import { h, icon, btn, clear, toast, confirmDialog, download } from './core/ui.js';
+import { h, icon, btn, clear, toast, confirmDialog, download, isNativeApp } from './core/ui.js';
 import { formatDate } from './core/utils.js';
 import { DirRoot, support } from './core/sources.js';
 import { summarizeManifest } from './core/manifest.js';
@@ -48,6 +48,8 @@ function initTheme() {
 /* ------------------------------------------------------------------ PWA */
 function initSW() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  // The Android app ships every file inside the APK, so no offline cache is needed (and it could serve stale files after an update).
+  if (isNativeApp()) { navigator.serviceWorker.getRegistrations?.().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {}); return; }
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
   navigator.serviceWorker.register('sw.js').then((reg) => {
@@ -163,6 +165,7 @@ function boot() {
   initSW();
   initInstall();
   window.addEventListener('beforeunload', (e) => { if (tagger.hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
+  if (isNativeApp()) document.documentElement.classList.add('is-native-app');
   window.__nametag = { renamer, tagger, support, go };
 }
 
