@@ -93,7 +93,7 @@ android {
 
         
             // The data for the app to support web share target.
-            resValue "string", "shareTarget", '{\\"action\\":\\"https://' + pwaHost + '/share-target\\",\\"method\\":\\"POST\\",\\"enctype\\":\\"multipart/form-data\\",\\"params\\":{\\"title\\":\\"title\\",\\"text\\":\\"text\\",\\"files\\":[{\\"name\\":\\"files\\",\\"accept\\":[\\"audio/*\\",\\"image/*\\",\\"video/*\\",\\"application/zip\\",\\"application/pdf\\",\\"text/*\\",\\"*/*\\",\\".mp3\\",\\".flac\\",\\".m4a\\",\\".ogg\\",\\".opus\\",\\".wav\\",\\".aiff\\",\\".zip\\"]}]}}'
+            resValue "string", "shareTarget", '{\\"action\\":\\"https://' + pwaHost + '/share-target\\",\\"method\\":\\"POST\\",\\"enctype\\":\\"multipart/form-data\\",\\"params\\":{\\"title\\":\\"title\\",\\"text\\":\\"text\\",\\"files\\":[{\\"name\\":\\"files\\",\\"accept\\":[\\"audio/*\\",\\"image/*\\",\\"video/*\\",\\"application/zip\\",\\"application/pdf\\",\\"text/*\\",\\"*/*\\"]}]}}'
         
 
         // The hostname is used when building the intent-filter, so the TWA is able to

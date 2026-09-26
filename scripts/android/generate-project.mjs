@@ -62,6 +62,7 @@ try {
   await twa.saveToFile(join(out, 'twa-manifest.json'));
 
   patchGradle(join(out, 'app/build.gradle'), local);
+  checkAndroidManifest(join(out, 'app/src/main/AndroidManifest.xml'));
   renderAdaptive(join(out, 'app/src/main/res')); // proper adaptive + themed (monochrome) launcher icon
   console.log('Android project written to ./android');
 } finally {
@@ -118,4 +119,11 @@ def twaManifest = [`);
   const sx = join(dirname(file), 'src/main/res/values/strings.xml');
   const x = readFileSync(sx, 'utf8').replace(/\s*<!--(?:(?!-->)[^])*-->\s*<string name="assetStatements">[^]*?<\/string>\s*/, '\n');
   writeFileSync(sx, x);
+}
+
+/** Android's installer rejects the whole APK ("problem parsing the package") for a MIME type without a slash. */
+export function checkAndroidManifest(file) {
+  const xml = readFileSync(file, 'utf8');
+  const bad = [...xml.matchAll(/android:mimeType="([^"]*)"/g)].map((m) => m[1]).filter((t) => !/^[^/\s]+\/[^/\s]+$/.test(t));
+  if (bad.length) throw new Error(`Invalid Android MIME types (use type/subtype, not file extensions): ${bad.join(', ')}. Fix share_target / file_handlers in public/manifest.webmanifest.`);
 }

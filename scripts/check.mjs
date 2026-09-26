@@ -11,5 +11,11 @@ const assets = [...sw.matchAll(/'([^'\s]+\.(?:html|js|css|woff2|png|svg|webmanif
 for (const a of assets) if (!existsSync(join(root, a))) { bad++; console.error('Missing precached asset:', a); }
 const jsFiles = walk(join(root, 'js')).map((f) => f.slice(root.length));
 for (const f of jsFiles) if (!assets.includes(f)) { bad++; console.error('Not precached by sw.js:', f); }
+// Android rejects APKs whose intent filters contain MIME types without a slash.
+const mime = /^[^/\s]+\/[^/\s]+$/;
+const wm = JSON.parse(readFileSync(join(root, 'manifest.webmanifest'), 'utf8'));
+for (const f of wm.share_target?.params?.files || []) for (const a of [].concat(f.accept || [])) if (!mime.test(a)) { bad++; console.error(`share_target accept must be MIME types only (Android): "${a}"`); }
+const am = join(root, '../android/app/src/main/AndroidManifest.xml');
+if (existsSync(am)) for (const [, t] of readFileSync(am, 'utf8').matchAll(/android:mimeType="([^"]*)"/g)) if (!mime.test(t)) { bad++; console.error(`AndroidManifest.xml has an invalid mimeType "${t}" (the APK would not install)`); }
 console.log(bad ? `${bad} problem(s)` : `OK: ${jsFiles.length} modules, ${assets.length} precached assets`);
 process.exitCode = bad ? 1 : 0;

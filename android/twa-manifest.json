@@ -72,15 +72,7 @@
             "application/zip",
             "application/pdf",
             "text/*",
-            "*/*",
-            ".mp3",
-            ".flac",
-            ".m4a",
-            ".ogg",
-            ".opus",
-            ".wav",
-            ".aiff",
-            ".zip"
+            "*/*"
           ]
         }
       ]

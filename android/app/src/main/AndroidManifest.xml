@@ -172,22 +172,6 @@
                     
                         <data android:mimeType="*/*" />
                     
-                        <data android:mimeType=".mp3" />
-                    
-                        <data android:mimeType=".flac" />
-                    
-                        <data android:mimeType=".m4a" />
-                    
-                        <data android:mimeType=".ogg" />
-                    
-                        <data android:mimeType=".opus" />
-                    
-                        <data android:mimeType=".wav" />
-                    
-                        <data android:mimeType=".aiff" />
-                    
-                        <data android:mimeType=".zip" />
-                    
                 </intent-filter>
             
 
