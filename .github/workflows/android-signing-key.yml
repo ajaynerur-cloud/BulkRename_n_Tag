@@ -1,0 +1,58 @@
+# Run ONCE to create the permanent signing key for the Android app.
+# Actions > "Android signing key (run once)" > Run workflow. Then open the run, download the
+# "nametag-signing-key" artifact (kept for 1 day), and copy the four values from SECRETS.txt into
+# Settings > Secrets and variables > Actions > New repository secret.
+# Keep the keystore file somewhere safe: every future update of the app must be signed with it.
+name: Android signing key (run once)
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Name for the certificate (your name or organisation)'
+        required: false
+        default: 'NameTag'
+
+permissions: {}
+
+jobs:
+  key:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Create keystore
+        env:
+          CN: ${{ inputs.name }}
+        run: |
+          set -eu
+          mkdir out && cd out
+          PASS=$(openssl rand -base64 36 | tr -dc 'A-Za-z0-9' | cut -c1-28)
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -keystore nametag.keystore -alias nametag -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$PASS" -keypass "$PASS" -dname "CN=${CN:-NameTag}, O=${CN:-NameTag}" -noprompt
+          base64 -w0 nametag.keystore > ANDROID_KEYSTORE_BASE64.txt
+          SHA=$(keytool -list -v -keystore nametag.keystore -alias nametag -storepass "$PASS" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
+          cat > SECRETS.txt <<TXT
+          Add these as repository secrets (Settings > Secrets and variables > Actions > Secrets):
+
+          ANDROID_KEYSTORE_BASE64   = the whole content of ANDROID_KEYSTORE_BASE64.txt (one long line)
+          ANDROID_KEYSTORE_PASSWORD = $PASS
+          ANDROID_KEY_PASSWORD      = $PASS
+          ANDROID_KEY_ALIAS         = nametag
+
+          Add this on Render (Environment > ANDROID_CERT_SHA256), then redeploy:
+          $SHA
+
+          Keep nametag.keystore and the password safe and private. Delete this artifact after copying.
+          TXT
+          echo "Signing key created. SHA-256 fingerprint: \`$SHA\`. Download the artifact and follow SECRETS.txt." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nametag-signing-key
+          path: out/*
+          retention-days: 1
