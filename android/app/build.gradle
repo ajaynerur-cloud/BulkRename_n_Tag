@@ -23,7 +23,7 @@ plugins {
 // NameTag: host, package id, version and signing can be overridden at build time
 // (see .github/workflows/android.yml). Defaults come from scripts/android/twa-config.json.
 def envOr = { String key, def fallback -> def v = System.getenv(key); (v != null && !v.trim().isEmpty()) ? v.trim() : fallback }
-def pwaHost = envOr('PWA_HOST', 'nametag.onrender.com')
+def pwaHost = envOr('PWA_HOST', 'nametag-bza3.onrender.com')
 
 def twaManifest = [
     applicationId: envOr('ANDROID_PACKAGE_ID', 'app.nametag.twa'),
