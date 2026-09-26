@@ -1,0 +1,15 @@
+{
+  "name": "nametag",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline PWA: bulk renamer for files, folders and ZIPs with pattern analysis and JSON undo, plus an audio tag editor with backups.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "npx --yes serve@14 public -l 5173",
+    "test": "node tests/renamer.test.mjs && node tests/tags.test.mjs",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/stamp-version.mjs"
+  }
+}

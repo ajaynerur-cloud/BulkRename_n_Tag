@@ -1,0 +1,28 @@
+{
+  "name": "NameTag: bulk renamer and audio tag editor",
+  "short_name": "NameTag",
+  "description": "Rename files, folders and ZIP contents in bulk with a pattern analyser and undo files. Edit audio tags with backups. Works offline.",
+  "id": "./",
+  "start_url": "./#renamer",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#EEF0F2",
+  "theme_color": "#EEF0F2",
+  "categories": ["utilities", "productivity", "music"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Renamer", "url": "./#renamer", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Tag editor", "url": "./#tagger", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "History", "url": "./#history", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "file_handlers": [
+    { "action": "./#tagger", "accept": { "audio/*": [".mp3", ".flac", ".m4a", ".m4b", ".ogg", ".opus", ".wav", ".aiff", ".aif"] } },
+    { "action": "./#renamer", "accept": { "application/zip": [".zip"] } }
+  ]
+}
