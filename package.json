@@ -8,7 +8,7 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "start": "npx --yes serve@14 public -l 5173",
-    "test": "node tests/renamer.test.mjs && node tests/tags.test.mjs",
+    "test": "node tests/renamer.test.mjs && node tests/portable.test.mjs && node tests/tags.test.mjs",
     "check": "node scripts/check.mjs",
     "build": "node scripts/stamp-version.mjs"
   }

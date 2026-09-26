@@ -9,9 +9,13 @@ import { RULES, makeRule, runPipeline, TAG_VARS } from './rules.js';
 import { analyze } from './analyzer.js';
 import { BUILTIN_PRESETS, loadUserPresets, addUserPreset, saveUserPresets, exportPresets, importPresets } from './presets.js';
 import { readTags, AUDIO_EXT } from '../tagger/index.js';
+import { DEFAULT_EXT_OPTS, extGroups, extensionProposals, newNameFor, needsContent, UNIFY, cleanTarget } from './extensions.js';
+import { detectRemap, countMatches, remapOps, mapPath, currentPathsAfter, isIdentity } from '../core/remap.js';
+import { remapPanel } from '../core/remap-ui.js';
 
 const OPTS_KEY = 'nametag.renamer.options';
 const RULES_KEY = 'nametag.renamer.rules';
+const EXT_KEY = 'nametag.renamer.extensions';
 const DEFAULT_OPTS = {
   scope: 'files', recursive: true, includeHidden: false, ext: '', filter: '', filterMode: 'glob', sort: 'name',
   conflict: 'suffix', windows: true, caseSensitive: false, copyFallback: false, changedOnly: false,
@@ -20,8 +24,9 @@ const DEFAULT_OPTS = {
 const S = {
   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
   excluded: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
-  analysis: null, restore: null, list: null, busy: false,
+  analysis: null, restore: null, list: null, busy: false, ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
 };
+try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
 
 try { Object.assign(S.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
 try { const r = JSON.parse(localStorage.getItem(RULES_KEY) || 'null'); if (Array.isArray(r)) S.rules = r.filter((x) => RULES[x.type]).map((x) => ({ ...makeRule(x.type, x.opts), enabled: x.enabled !== false })); } catch { /* ignore */ }
@@ -31,6 +36,7 @@ const saveState = debounce(() => {
   try {
     localStorage.setItem(OPTS_KEY, JSON.stringify(S.opts));
     localStorage.setItem(RULES_KEY, JSON.stringify(S.rules.map(({ type, enabled, opts }) => ({ type, enabled, opts }))));
+    const { map, ...extRest } = S.ext; localStorage.setItem(EXT_KEY, JSON.stringify(extRest));
   } catch { /* quota */ }
 }, 400);
 
@@ -39,7 +45,7 @@ export function mountRenamer(el) {
   S.el = el;
   el.append(
     h('div', { class: 'toolbar' },
-      segmented([['rename', 'Rename'], ['restore', 'Restore']], () => S.mode, (v) => { S.mode = v; render(); }, 'Mode'),
+      segmented([['rename', 'Rename'], ['ext', 'Extensions'], ['restore', 'Restore']], () => S.mode, (v) => { S.mode = v; render(); }, 'Mode'),
       h('div', { class: 'toolbar-group', id: 'rn-source' }),
     ),
     h('div', { class: 'source-line', id: 'rn-source-line' }),
@@ -137,8 +143,21 @@ export const getRoot = () => S.root;
 async function setRoot(root, { keepMode = false } = {}) {
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) { toast('Write permission is needed to rename files in this folder.', { type: 'warn' }); return; }
   S.root = root; S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
-  if (!keepMode) S.mode = 'rename';
+  if (!keepMode && S.mode === 'restore' && !S.pending) S.mode = 'rename';
   await scan();
+  if (S.pending) {
+    const pend = S.pending; S.pending = null;
+    const here = root.manifests.find((m) => m.name === pend.fileName);
+    S.mode = 'restore';
+    await loadRestore(pend.manifest, here ? here.path : null, !here);
+  }
+}
+
+/** Keep the loaded undo file and open another folder, ZIP or import to apply it to. */
+function pickTargetFor(manifest, fileName, how) {
+  S.pending = { manifest, fileName };
+  const go = { folder: openFolder, zip: openZip, import: () => importFiles(true) }[how];
+  Promise.resolve(go()).finally(() => { if (S.pending?.manifest === manifest) { S.pending = null; render(); } });
 }
 
 async function scan() {
@@ -163,6 +182,9 @@ function render() {
   if (S.mode === 'restore') { renderRestore(body); return; }
   body.append(
     h('div', { class: 'workbench' },
+      S.mode === 'ext' ? h('aside', { class: 'rules-col', 'aria-label': 'Extensions' },
+        h('section', { class: 'panel ext-panel', id: 'rn-ext', 'aria-label': 'Extension changes' }),
+        h('details', { class: 'panel filters', id: 'rn-filters' }, h('summary', null, icon('filter'), 'Filters and options'), h('div', { id: 'rn-filter-body' }))) :
       h('aside', { class: 'rules-col', 'aria-label': 'Rules' },
         h('div', { class: 'col-head' }, h('h2', null, 'Rules'),
           h('div', { class: 'col-actions' },
@@ -184,7 +206,7 @@ function render() {
     ),
     h('div', { class: 'actionbar', id: 'rn-bar' }),
   );
-  renderRules();
+  if (S.mode === 'ext') renderExtPanel(); else renderRules();
   renderFilters();
   const vp = body.querySelector('#rn-list');
   S.list = new VirtualList(vp, { rowHeight: () => (matchMedia('(max-width: 640px)').matches ? 64 : 48), renderRow: renderRow });
@@ -328,8 +350,9 @@ function globRe(g) {
 
 function selectCandidates() {
   const o = S.opts;
-  let list = S.entries.filter((e) => (o.scope === 'both' ? true : o.scope === 'dirs' ? e.isDir : !e.isDir));
-  const exts = o.ext.split(/[\s,;]+/).map((x) => x.replace(/^\./, '').toLowerCase()).filter(Boolean);
+  const extMode = S.mode === 'ext';
+  let list = S.entries.filter((e) => (extMode ? !e.isDir : o.scope === 'both' ? true : o.scope === 'dirs' ? e.isDir : !e.isDir));
+  const exts = extMode ? [] : o.ext.split(/[\s,;]+/).map((x) => x.replace(/^\./, '').toLowerCase()).filter(Boolean);
   if (exts.length) list = list.filter((e) => e.isDir || exts.includes(splitName(e.name).ext.toLowerCase()));
   if (o.filter.trim()) {
     let test;
@@ -355,10 +378,10 @@ function selectCandidates() {
 }
 
 const usesTags = () => S.rules.some((r) => r.enabled && Object.values(r.opts).some((v) => typeof v === 'string' && new RegExp(`\\{(${TAG_VARS.join('|')})(?=[:|}])`).test(v)));
-const usesMagic = () => S.rules.some((r) => r.enabled && RULES[r.type].needsMagic?.(r.opts));
+const usesMagic = () => (S.mode === 'ext' ? needsContent(S.ext) : S.rules.some((r) => r.enabled && RULES[r.type].needsMagic?.(r.opts)));
 
 async function ensureExtras(cands) {
-  const needTags = usesTags() ? cands.filter((e) => !e.isDir && AUDIO_EXT.test(e.name) && !S.tags.has(e.path)) : [];
+  const needTags = S.mode !== 'ext' && usesTags() ? cands.filter((e) => !e.isDir && AUDIO_EXT.test(e.name) && !S.tags.has(e.path)) : [];
   const needMagic = usesMagic() ? cands.filter((e) => !e.isDir && !S.magic.has(e.path)) : [];
   if (!needTags.length && !needMagic.length) return;
   const total = needTags.length + needMagic.length;
@@ -412,14 +435,19 @@ function sniffExt(b) {
 
 let computeToken = 0;
 async function recompute() {
-  if (!S.root || S.mode !== 'rename') { paintEmpty(); paintBar(); renderAnalyser(); return; }
+  if (!S.root || S.mode === 'restore') { paintEmpty(); paintBar(); renderAnalyser(); return; }
   const token = ++computeToken;
   const cands = selectCandidates();
   await ensureExtras(cands);
   if (token !== computeToken) return;
   S.candidates = cands;
-  const items = cands.map((e) => ({ path: e.path, name: e.name, isDir: e.isDir, mtime: e.mtime, size: e.size, tags: S.tags.get(e.path) || null, detectedExt: S.magic.get(e.path) || null }));
-  const { names, errors } = runPipeline(items, S.rules, { scope: 'both', rootName: S.root.name, now: new Date() });
+  let names; let errors = [];
+  if (S.mode === 'ext') {
+    names = extensionProposals(cands, S.ext, S.magic);
+  } else {
+    const items = cands.map((e) => ({ path: e.path, name: e.name, isDir: e.isDir, mtime: e.mtime, size: e.size, tags: S.tags.get(e.path) || null, detectedExt: S.magic.get(e.path) || null }));
+    ({ names, errors } = runPipeline(items, S.rules, { scope: 'both', rootName: S.root.name, now: new Date() }));
+  }
   const proposals = new Map();
   for (const [p, n] of names) if (!S.excluded.has(p)) proposals.set(p, n);
   S.plan = buildPlan(S.entries, proposals, { conflict: S.opts.conflict, windows: S.opts.windows, caseSensitive: S.opts.caseSensitive });
@@ -431,6 +459,7 @@ async function recompute() {
   showRuleErrors(errors);
   filterRows();
   renderAnalyser();
+  if (S.mode === 'ext') paintExtCounts();
 }
 
 function showRuleErrors(errors) {
@@ -464,7 +493,7 @@ function paintEmpty() {
     el.append(h('div', { class: 'empty-art', 'aria-hidden': 'true' }, h('span', { class: 'tape tape-sm' }, 'drop files here')),
       h('p', null, 'Open a folder or ZIP to start. Nothing changes until you press Rename, and every rename writes an undo file.'));
   } else if (!S.rows.length) el.append(h('p', null, 'No items match the current filters.'));
-  else if (!S.visible.length) el.append(h('p', null, S.opts.changedOnly ? 'No names change with the current rules.' : 'Nothing matches your search.'));
+  else if (!S.visible.length) el.append(h('p', null, S.opts.changedOnly ? (S.mode === 'ext' ? 'No extensions change yet. Type a new extension next to a group, or turn on a quick option.' : 'No names change with the current rules.') : 'Nothing matches your search.'));
 }
 
 const STATUS = {
@@ -517,6 +546,92 @@ function paintBar() {
   );
 }
 
+/* ------------------------------------------------------------------ extensions mode */
+function renderExtPanel() {
+  const box = S.el.querySelector('#rn-ext');
+  if (!box) return;
+  clear(box);
+  const o = S.ext;
+  box.append(
+    h('div', { class: 'panel-head' }, icon('file-text'), h('h2', null, 'Change extensions')),
+    h('p', { class: 'muted' }, 'Works on the open folder, ZIP or imported files, subfolders included. Type a new extension next to a group, or use the quick options. An undo file is written first, like every rename.'),
+    renderFields([
+      { key: 'case', type: 'segment', label: 'Letter case', options: [['keep', 'Keep'], ['lower', 'lower'], ['upper', 'UPPER']] },
+      { key: 'unify', type: 'checkbox', label: 'Unify spelling variants', help: 'jpeg to jpg, tiff to tif, htm to html, mpeg to mpg, aif to aiff, yml to yaml and more.' },
+      { key: 'fixContent', type: 'checkbox', label: 'Fix extensions that do not match the contents', help: 'Reads the first bytes of each file, so a PNG saved as .jpg becomes .png. Knows common image, audio, video, archive and PDF formats.' },
+      { key: 'addMissing', type: 'checkbox', label: 'Add a missing extension from the contents' },
+      { key: 'compound', type: 'checkbox', label: 'Treat .tar.gz and similar as one extension' },
+    ], o, () => { saveState(); renderExtGroups(); changed(); }),
+    h('div', { class: 'ext-hint', id: 'rn-ext-hint' }),
+    h('div', { class: 'col-head' }, h('h3', null, 'Extensions found'),
+      btn('Clear typed changes', () => { o.map = {}; renderExtGroups(); changed(); }, { cls: 'btn-sm btn-ghost', ic: 'x' })),
+    h('div', { class: 'ext-groups', id: 'rn-ext-groups', role: 'list' }),
+    h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply).'),
+  );
+  renderExtGroups();
+}
+
+function renderExtGroups() {
+  const wrap = S.el.querySelector('#rn-ext-groups');
+  if (!wrap) return;
+  clear(wrap);
+  const o = S.ext;
+  const files = S.root ? selectCandidates() : [];
+  const groups = extGroups(files, { compound: o.compound !== false });
+  if (!groups.length) { wrap.append(h('p', { class: 'muted' }, S.root ? 'No files match the filters.' : 'Open a folder, a ZIP or some files to see their extensions.')); paintExtHint([]); return; }
+  for (const g of groups) {
+    const auto = newNameFor({ name: `x.${g.ext}` }, { ...o, map: {}, fixContent: false, addMissing: false }, null).to;
+    const input = h('input', {
+      class: 'input mono', value: o.map[g.ext] ?? '', spellcheck: 'false', autocomplete: 'off',
+      placeholder: g.ext && auto !== g.ext ? auto : 'keep', 'aria-label': `New extension for ${g.ext ? `.${g.ext}` : 'files without one'}`,
+      oninput: (e) => { if (e.target.value.trim() === '') delete o.map[g.ext]; else o.map[g.ext] = e.target.value; changed(); },
+    });
+    wrap.append(h('div', { class: 'ext-row', role: 'listitem', dataset: { ext: g.ext } },
+      h('span', { class: 'ext-from mono', title: g.sample }, g.ext ? `.${g.ext}` : '(none)'),
+      h('span', { class: 'ext-count muted' }, `${g.count.toLocaleString('en-US')}`),
+      icon('arrow-right', 'ext-arrow'),
+      input,
+      h('span', { class: 'ext-result', 'aria-live': 'polite' })));
+  }
+  paintExtHint(groups);
+  paintExtCounts();
+}
+
+function paintExtHint(groups) {
+  const el = S.el.querySelector('#rn-ext-hint');
+  if (!el) return;
+  clear(el);
+  const fam = new Map();
+  for (const g of groups) { if (!g.ext) continue; const k = UNIFY[g.ext.toLowerCase()] || g.ext.toLowerCase(); if (!fam.has(k)) fam.set(k, new Set()); fam.get(k).add(g.ext); }
+  const mixed = [...fam.entries()].filter(([, v]) => v.size > 1);
+  const noExt = groups.find((g) => !g.ext);
+  if (mixed.length) {
+    el.append(h('p', { class: 'f-warn' }, icon('triangle-alert'), h('span', null, `Mixed spellings: ${mixed.slice(0, 4).map(([k, v]) => `${[...v].map((x) => `.${x}`).join(', ')} (all .${k})`).join('; ')}.`)),
+      btn('Make them consistent', () => { S.ext.unify = true; S.ext.case = 'lower'; saveState(); renderExtPanel(); changed(); }, { cls: 'btn-sm', ic: 'wand-sparkles' }));
+  }
+  if (noExt && !S.ext.addMissing) el.append(h('p', { class: 'f-info' }, icon('info'), h('span', null, `${noExt.count} file${noExt.count === 1 ? ' has' : 's have'} no extension. "Add a missing extension" can name them from their contents.`)));
+}
+
+function paintExtCounts() {
+  const wrap = S.el?.querySelector('#rn-ext-groups');
+  if (!wrap) return;
+  const compound = S.ext.compound !== false;
+  const byExt = new Map();
+  for (const r of S.rows) {
+    if (r.e.isDir) continue;
+    const ext = compound ? splitName(r.e.name).ext : (r.e.name.lastIndexOf('.') > 0 ? r.e.name.slice(r.e.name.lastIndexOf('.') + 1) : '');
+    const c = byExt.get(ext) || { n: 0, to: new Set() };
+    if (r.newName !== r.e.name && r.status !== 'excluded') { c.n++; const t = compound ? splitName(r.newName).ext : r.newName.slice(r.newName.lastIndexOf('.') + 1); c.to.add(t ? `.${t}` : 'none'); }
+    byExt.set(ext, c);
+  }
+  for (const row of wrap.querySelectorAll('.ext-row')) {
+    const c = byExt.get(row.dataset.ext);
+    const out = row.querySelector('.ext-result');
+    out.textContent = c && c.n ? `${c.n} to ${[...c.to].slice(0, 2).join(', ')}` : '';
+    row.classList.toggle('is-changing', !!(c && c.n));
+  }
+}
+
 /* ------------------------------------------------------------------ analyser */
 function renderAnalyser() {
   const box = S.el.querySelector('#rn-analyser');
@@ -553,7 +668,7 @@ async function runRename() {
   const root = S.root;
   const { stats, ops } = S.plan;
   const inPlace = root.kind === 'dir';
-  const ok = await confirmDialog('Rename files?', h('div', null,
+  const ok = await confirmDialog(S.mode === 'ext' ? 'Change extensions?' : 'Rename files?', h('div', null,
     h('p', null, `${stats.changed.toLocaleString('en-US')} item${stats.changed === 1 ? '' : 's'} will be renamed ${inPlace ? `directly in "${root.name}"` : 'and you will get a new ZIP'}.`),
     h('p', { class: 'muted' }, 'An undo file is written first, so you can put every name back with Restore, even from another computer.'),
     stats.invalid || stats.conflict ? h('p', { class: 'warn' }, `${stats.invalid + stats.conflict} item(s) will be skipped.`) : null), { okText: 'Rename' });
@@ -561,7 +676,11 @@ async function runRename() {
   if (inPlace && !(await root.verifyPermission(true))) { toast('Permission was not granted.', { type: 'error' }); return; }
   root.allowCopyFallback = S.opts.copyFallback;
   S.busy = true; paintBar();
-  const manifest = createRenameManifest({ root: root.name, source: root.kind, rules: S.rules.filter((r) => r.enabled).map(({ type, opts }) => ({ type, opts })), ops, stats });
+  const extMode = S.mode === 'ext';
+  const manifest = createRenameManifest({
+    root: root.name, source: root.kind, ops, stats, tool: extMode ? 'extension' : 'renamer',
+    rules: extMode ? [{ type: 'extensions', opts: JSON.parse(JSON.stringify(S.ext)) }] : S.rules.filter((r) => r.enabled).map(({ type, opts }) => ({ type, opts })),
+  });
   const mName = manifestFileName('rename');
   let wroteManifest = false;
   try { await root.writeText(mName, JSON.stringify(manifest, null, 2)); wroteManifest = true; } catch (e) {
@@ -608,38 +727,71 @@ async function undoNow(root, manifest, mName) {
 function renderRestore(body) {
   const wrap = h('div', { class: 'restore' });
   body.append(wrap);
+  const openUndoFile = async () => {
+    const [f] = await pickFiles({ accept: '.json,application/json', multiple: false });
+    if (!f) return null;
+    try {
+      const mm = parseManifest(await readFileText(f));
+      if (mm.type !== 'rename') throw new Error('This is a tag backup, not a rename undo file. Open it in the Tag editor.');
+      return { manifest: mm, fileName: f.name };
+    } catch (e) { toast(e.message, { type: 'error' }); return null; }
+  };
+  const targetButtons = (manifest, fileName, primary = true) => [
+    support.dirPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { cls: primary ? 'btn-primary' : '', ic: 'folder-open' }) : null,
+    btn('Open ZIP', () => pickTargetFor(manifest, fileName, 'zip'), { ic: 'file-archive' }),
+    btn('Import a folder', () => pickTargetFor(manifest, fileName, 'import'), { ic: 'upload' }),
+  ];
   if (!S.root) {
+    const pend = S.pendingShown;
     wrap.append(h('div', { class: 'panel' },
       h('h2', null, 'Restore original names'),
-      h('p', null, 'Open the folder (or ZIP) that was renamed. NameTag finds the undo files it left there. You can also open an undo file directly, or use the History tab.'),
+      pend
+        ? h('p', null, 'Undo file loaded: ', h('strong', { class: 'mono' }, pend.fileName), `. It was made for "${pend.manifest.root}". Now choose where those files are on this computer: the same folder, its parent, or the extracted ZIP all work.`)
+        : h('p', null, 'Open the folder (or ZIP) that was renamed. NameTag finds the undo files inside it, also in subfolders. Got only the undo file, for example on another computer? Open it first, then choose the folder.'),
       h('div', { class: 'btn-row' },
-        support.dirPicker ? btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }) : null,
-        btn('Open ZIP', () => openZip(), { ic: 'file-archive' }))));
+        ...(pend ? targetButtons(pend.manifest, pend.fileName) : [
+          support.dirPicker ? btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }) : null,
+          btn('Open ZIP', () => openZip(), { ic: 'file-archive' }),
+          btn('Import a folder', () => importFiles(true), { ic: 'upload' }),
+        ]),
+        btn(pend ? 'Use a different undo file…' : 'Open an undo file first…', async () => { const r = await openUndoFile(); if (r) { S.pendingShown = r; render(); } }, { ic: 'file-json', cls: 'btn-ghost' }))));
     return;
   }
+  S.pendingShown = null;
   const list = h('div', { class: 'panel' },
     h('div', { class: 'panel-head' }, icon('undo-2'), h('h2', null, 'Undo files in this source')),
-    S.root.manifests.length ? null : h('p', { class: 'muted' }, 'No NameTag undo files were found at the top of this source.'),
-    h('ul', { class: 'manifest-list' }, S.root.manifests.slice().sort((a, b) => (a.name < b.name ? 1 : -1)).map((m) => h('li', null,
-      h('button', { type: 'button', class: `manifest-item ${S.restore?.name === m.name ? 'is-active' : ''}`, onclick: async () => {
-        try { const mm = parseManifest(await (await m.getFile()).text()); if (mm.type !== 'rename') { toast('That file is a tag backup. Open it in the Tag editor.', { type: 'warn' }); return; } await loadRestore(mm, m.name); } catch (e) { toast(e.message, { type: 'error' }); }
-      } }, icon('file-json'), h('span', { class: 'mono' }, m.name))))),
+    S.root.manifests.some((m) => /^nametag-rename-/i.test(m.name)) ? null : h('p', { class: 'muted' }, 'No NameTag undo files were found here. If the files came from another computer, open the undo file that came with them.'),
+    h('ul', { class: 'manifest-list' }, S.root.manifests.filter((m) => /^nametag-rename-/i.test(m.name)).sort((a, b) => (a.name < b.name ? 1 : -1)).map((m) => h('li', null,
+      h('button', { type: 'button', class: `manifest-item ${S.restore?.name === m.path ? 'is-active' : ''}`, onclick: async () => {
+        try { const mm = parseManifest(await (await m.getFile()).text()); await loadRestore(mm, m.path); } catch (e) { toast(e.message, { type: 'error' }); }
+      } }, icon('file-json'), h('span', { class: 'mono' }, m.path))))),
     h('div', { class: 'btn-row' }, btn('Open an undo file…', async () => {
-      const [f] = await pickFiles({ accept: '.json,application/json', multiple: false });
-      if (!f) return;
-      try { const mm = parseManifest(await readFileText(f)); if (mm.type !== 'rename') throw new Error('This is a tag backup, not a rename undo file.'); await loadRestore(mm, f.name, true); } catch (e) { toast(e.message, { type: 'error' }); }
+      const r = await openUndoFile();
+      if (r) await loadRestore(r.manifest, null, true, null, r.fileName);
     }, { ic: 'upload' })));
   wrap.append(list, h('div', { class: 'panel', id: 'rn-restore-detail' }));
   paintRestore();
 }
 
-async function loadRestore(manifest, name = null, external = false) {
+async function loadRestore(manifest, name = null, external = false, remap = null, fileName = null) {
   const all = await S.root.list({ recursive: true, includeHidden: true, includeTemp: true, withFiles: false });
-  const ops = reverseOps(manifest.operations);
-  const sim = simulateOps(all.map((e) => e.path), ops, { caseSensitive: S.opts.caseSensitive });
-  S.restore = { manifest, name: name || null, external, ops, sim };
-  if (S.mode !== 'restore') { S.mode = 'restore'; }
+  const present = all.map((e) => e.path);
+  const saved = currentPathsAfter(manifest.operations);
+  const hasDirOps = manifest.operations.some((o) => o.kind === 'dir');
+  const hint = name ? dirname(name) : '';
+  if (!remap) remap = detectRemap(saved, present, { caseSensitive: S.opts.caseSensitive, allowDirs: !hasDirOps, hint });
+  S.restore = { manifest, name: name || null, fileName: fileName || (name ? basename(name) : null), external, present, saved, hasDirOps, remap };
+  computeRestore();
+  S.mode = 'restore';
   render();
+}
+
+function computeRestore() {
+  const R = S.restore;
+  const rm = R.hasDirOps ? { ...R.remap, byName: false } : R.remap;
+  R.ops = remapOps(reverseOps(R.manifest.operations), rm);
+  R.sim = simulateOps(R.present, R.ops, { caseSensitive: S.opts.caseSensitive });
+  R.matched = countMatches(R.saved, R.present, rm, { caseSensitive: S.opts.caseSensitive });
 }
 
 function paintRestore() {
@@ -647,13 +799,29 @@ function paintRestore() {
   if (!box) return;
   clear(box);
   if (!S.restore) { box.append(h('p', { class: 'muted' }, 'Choose an undo file to see what would be restored.')); return; }
-  const { manifest: m, sim } = S.restore;
-  const done = sim.results.filter((r) => r.status === 'missing' && S.restore.ops.length);
+  const R = S.restore;
+  const { manifest: m, sim } = R;
+  const all = R.matched === R.saved.length;
+  const panel = remapPanel({
+    manifest: m, rootName: S.root.name, remap: R.remap, matched: R.matched, total: R.saved.length,
+    allowDirs: !R.hasDirOps, dirsNote: 'Not available when folders themselves were renamed; use the two boxes above instead.',
+    samples: R.saved.slice(0, 3).map((p) => [p, mapPath(p, R.hasDirOps ? { ...R.remap, byName: false } : R.remap) || p]).filter(([a, b]) => a !== b),
+    onChange: (rm) => { R.remap = { ...R.remap, ...rm }; computeRestore(); paintRestore(); },
+    onDetect: () => { R.remap = detectRemap(R.saved, R.present, { caseSensitive: S.opts.caseSensitive, allowDirs: !R.hasDirOps, hint: R.name ? dirname(R.name) : '' }); computeRestore(); paintRestore(); },
+    onPickFolder: (e) => menu(e.currentTarget, [
+      support.dirPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
+      { label: 'Open ZIP…', icon: 'file-archive', onClick: () => pickTargetFor(m, R.fileName, 'zip') },
+      { label: 'Import a folder (copy)…', icon: 'upload', onClick: () => pickTargetFor(m, R.fileName, 'import') },
+    ]),
+  });
+  const pathBox = h('details', { class: 'remap-wrap', open: !all || !isIdentity(R.remap) ? '' : null },
+    h('summary', null, icon(all ? 'circle-check' : 'triangle-alert'), all ? `All ${R.saved.length} items found here. Paths and folder` : 'Paths need attention'), panel);
   box.append(
-    h('div', { class: 'panel-head' }, icon('rotate-ccw'), h('h2', null, 'Restore preview')),
+    h('div', { class: 'panel-head' }, icon('rotate-ccw'), h('h2', null, m.tool === 'extension' ? 'Restore extensions' : 'Restore preview')),
     h('p', null, `Created ${formatDate(new Date(m.createdAt), 'D MMM YYYY, HH:mm')} for "${m.root}". ${summarizeManifest(m)}.`,
       m.status === 'partial' ? ' The original run stopped early; only the completed renames are listed.' : '',
       m.restoredAt ? ` Already restored on ${formatDate(new Date(m.restoredAt), 'D MMM YYYY, HH:mm')}.` : ''),
+    pathBox,
     h('p', { class: 'restore-stats' },
       h('span', { class: 'ok' }, `${sim.ok} ready`), h('span', { class: 'muted' }, `${sim.missing} not found or already restored`), sim.conflict ? h('span', { class: 'bad' }, `${sim.conflict} blocked by another file`) : null),
     h('ul', { class: 'restore-list mono' }, sim.results.filter((r) => !basename(r.from).startsWith('.nametag-tmp-') || r.status !== 'ok').slice(0, 400).map((r) => h('li', { class: `st-${r.status}` },
@@ -661,12 +829,12 @@ function paintRestore() {
     sim.results.length > 400 ? h('p', { class: 'muted' }, `…and ${sim.results.length - 400} more.`) : null,
     h('div', { class: 'btn-row' }, btn(`Restore ${sim.ok} name${sim.ok === 1 ? '' : 's'}`, () => runRestore(), { cls: 'btn-primary', ic: 'rotate-ccw', disabled: !sim.ok || S.busy })),
   );
-  void done;
 }
 
 async function runRestore() {
-  const { manifest, sim, name } = S.restore;
+  const { manifest, sim, name, remap } = S.restore;
   const root = S.root;
+  if (!isIdentity(remap)) manifest.lastRemap = { strip: remap.strip, prefix: remap.prefix, dirs: remap.byName ? remap.dirs : [], appliedTo: root.name };
   const ops = sim.results.filter((r) => r.status === 'ok').map(({ kind, from, to }) => ({ kind, from, to }));
   if (!(await confirmDialog('Restore original names?', `${ops.length} item(s) will get their previous names back.`, { okText: 'Restore' }))) return;
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) return;

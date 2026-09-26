@@ -4,8 +4,8 @@ const CACHE = `nametag-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/theme-init.js', 'js/app.js',
-  'js/core/utils.js', 'js/core/ui.js', 'js/core/sources.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
-  'js/renamer/rules.js', 'js/renamer/analyzer.js', 'js/renamer/presets.js', 'js/renamer/renamer-ui.js',
+  'js/core/utils.js', 'js/core/ui.js', 'js/core/sources.js', 'js/core/remap.js', 'js/core/remap-ui.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
+  'js/renamer/rules.js', 'js/renamer/analyzer.js', 'js/renamer/presets.js', 'js/renamer/extensions.js', 'js/renamer/renamer-ui.js',
   'js/tagger/bytes.js', 'js/tagger/model.js', 'js/tagger/id3.js', 'js/tagger/mpeg.js', 'js/tagger/flac.js', 'js/tagger/vorbis.js',
   'js/tagger/ogg.js', 'js/tagger/mp4.js', 'js/tagger/riff.js', 'js/tagger/index.js', 'js/tagger/tools.js', 'js/tagger/online.js', 'js/tagger/tagger-ui.js',
   'vendor/jszip.min.js',

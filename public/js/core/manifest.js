@@ -9,20 +9,20 @@ export function manifestFileName(type, d = new Date()) {
   return `nametag-${type === 'tags' ? 'tags' : 'rename'}-${timestampForFile(d)}.json`;
 }
 
-export function createRenameManifest({ root, source, rules, ops, stats }) {
+export function createRenameManifest({ root, source, rules, ops, stats, tool = 'renamer' }) {
   return {
     app: APP, type: 'rename', version: VERSION, id: uuid(), createdAt: new Date().toISOString(),
-    root, source, status: 'in-progress', rules: rules || [], stats: stats || {},
+    root, source, tool, pathsRelativeTo: root, status: 'in-progress', rules: rules || [], stats: stats || {},
     operations: ops.map((o) => ({ kind: o.kind, from: o.from, to: o.to })),
     restoredAt: null,
-    note: 'Created by NameTag. Open this folder in NameTag and choose Restore to undo these renames. Operations are listed in execution order; undo runs them in reverse.',
+    note: 'Created by NameTag. Paths are relative to the folder or ZIP that was renamed, so this file works on any computer: open that folder (or its parent, or the extracted ZIP) in NameTag, choose Restore, and adjust the paths if asked. Operations are listed in execution order; undo runs them in reverse.',
   };
 }
 
 export function createTagManifest({ root, source, files, options }) {
   return {
     app: APP, type: 'tags', version: VERSION, id: uuid(), createdAt: new Date().toISOString(),
-    root, source, status: 'in-progress', options: options || {}, files, restoredAt: null,
+    root, source, pathsRelativeTo: root, status: 'in-progress', options: options || {}, files, restoredAt: null,
     note: 'Created by NameTag. Contains tag values before and after editing. Use Restore in the Tag editor to write the "before" values back.',
   };
 }
@@ -41,7 +41,8 @@ export const isManifestName = (n) => MANIFEST_RE.test(n);
 export function summarizeManifest(m) {
   if (m.type === 'rename') {
     const files = m.operations.filter((o) => !o.to.split('/').pop().startsWith('.nametag-tmp-') && !o.from.split('/').pop().startsWith('.nametag-tmp-')).length;
-    return `${m.operations.length} operation${m.operations.length === 1 ? '' : 's'}${files !== m.operations.length ? ` (${files} visible renames)` : ''}`;
+    const what = m.tool === 'extension' ? 'extension change' : 'operation';
+    return `${m.operations.length} ${what}${m.operations.length === 1 ? '' : 's'}${files !== m.operations.length ? ` (${files} visible renames)` : ''}`;
   }
   return `${m.files.length} file${m.files.length === 1 ? '' : 's'} with tag changes`;
 }

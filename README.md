@@ -28,7 +28,7 @@ No framework, no bundler: plain ES modules, JSZip, and self-hosted fonts.
 
 ```bash
 npm start          # serves ./public on http://localhost:5173 (service workers need http(s), not file://)
-npm test           # renamer engine + tag round-trips on real audio fixtures
+npm test           # renamer engine, portable restore + extension renamer, tag round-trips on real audio fixtures
 npm run check      # syntax check + service-worker precache list check
 ```
 
@@ -70,6 +70,28 @@ npm run check      # syntax check + service-worker precache list check
 - **Restore simulates first.** It shows each item as ready, missing or blocked, then reverses the operations in order. It works from the Restore tab, from History, or on another computer.
 
 **Presets:** clean names, music "01 - Title", from tags, photos by date, web slug, snake_case, sequential "Folder 001", remove numbering, lowercase extensions. You can save your own presets and export or import them as JSON.
+
+### Extension renamer
+
+Choose **Extensions** in the Renamer to change extensions in bulk, for a folder (in place), a ZIP, or imported files, with subfolders included.
+
+- **Every extension found is listed** with its file count. Type a new extension next to any group; `-` removes it.
+- **Quick options:** letter case (keep, lower, UPPER), unify spelling variants (`jpeg` to `jpg`, `tiff` to `tif`, `htm` to `html`, `mpeg` to `mpg`, `aif` to `aiff`, `yml` to `yaml`), fix extensions that do not match the file contents (reads the first bytes, so a PNG named `.jpg` becomes `.png`), and add missing extensions from content.
+- **Mixed spellings are flagged** (for example `.JPEG`, `.jpeg` and `.jpg` in one folder), with a one-click fix.
+- **It uses the same safety as renames.** Conflicts are checked first, case-only changes go through temporary names, and an undo file is written first (`"tool": "extension"`). Restore puts the old extensions back.
+
+### Restoring on another computer
+
+Undo and backup files never store absolute paths. Every path is relative to the folder or ZIP that was changed, so the JSON file travels with the files. Restore then lines the saved paths up with whatever was opened on the new computer:
+
+- **The same folder, its parent, or an extracted ZIP with extra wrapper folders:** the offset is detected automatically.
+- **Undo files in subfolders** are found as well, and the folder where one was found is used as a hint.
+- **Only the JSON file?** Open it first ("Open an undo file first" in the Renamer, "Open a backup file first" in the Tag editor), then choose the folder, ZIP or import.
+- **Manual control:** "Choose the folder on this computer" keeps the loaded undo file and switches the target. Two boxes adjust the mapping: skip N leading folders of the saved paths, and the subfolder the files are in here.
+- **Moved or renamed subfolders** are detected by unique file names, e.g. `CD1` renamed to `Disc 1`. This is off for undo files where folders themselves were renamed, because those paths change over time.
+- **Preview before restoring:** it shows how many items were found and marks each one as ready, missing or blocked (the Tag editor also marks files matched by name). When a mapping is used, it is recorded in the undo file as `lastRemap`.
+
+This applies to all three tools: renamer, extension renamer and tag editor. The Tag editor can also open a ZIP directly, edit the audio inside, and save the ZIP back.
 
 ## Tag editor
 
@@ -123,13 +145,13 @@ All eight formats are covered by `tests/tags.test.mjs`. Outputs were checked wit
 public/
   index.html, manifest.webmanifest, sw.js, css/app.css
   js/app.js                  routing, theme, install, drag and drop, service-worker updates
-  js/core/                   utils, ui (dialogs, menus, virtual list), sources (folder/ZIP/import),
+  js/core/                   utils, ui (dialogs, menus, virtual list), sources (folder/ZIP/import), remap (portable restore),
                              planner (conflicts, ordering, execute, restore), manifest, history (IndexedDB)
-  js/renamer/                rules, analyzer, presets, renamer-ui
+  js/renamer/                rules, analyzer, presets, extensions, renamer-ui
   js/tagger/                 bytes, model, id3, mpeg, flac, vorbis, ogg, mp4, riff, index, tools, online, tagger-ui
   vendor/jszip.min.js, fonts/ (Atkinson Hyperlegible Next and Mono, OFL), icons/
 scripts/                     stamp-version.mjs (Render build), check.mjs
-tests/                       renamer.test.mjs, tags.test.mjs, fixtures/
+tests/                       renamer.test.mjs, portable.test.mjs, tags.test.mjs, fixtures/
 render.yaml
 ```
 

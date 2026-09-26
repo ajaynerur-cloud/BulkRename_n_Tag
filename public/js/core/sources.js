@@ -58,7 +58,7 @@ export class DirRoot extends BaseRoot {
       for await (const [name, h] of dh.entries()) {
         const acc = this._accept(name, { includeHidden, includeTemp });
         const path = joinPath(prefix, name);
-        if (acc === 'manifest' && h.kind === 'file' && !prefix) { this.manifests.push({ path, name, getFile: () => h.getFile() }); continue; }
+        if (acc === 'manifest' && h.kind === 'file') { this.manifests.push({ path, name, getFile: () => h.getFile() }); continue; }
         if (!acc) continue;
         if (h.kind === 'directory') {
           out.push({ path, name, isDir: true, depth, handle: h });
@@ -177,7 +177,7 @@ export class ZipRoot extends BaseRoot {
     const hiddenBy = (p) => p.split('/').some((seg) => !this._accept(seg, { includeHidden, includeTemp }) && !MANIFEST_RE.test(seg));
     for (const [path, e] of this.map) {
       const name = basename(path);
-      if (!e.isDir && !dirname(path) && MANIFEST_RE.test(name)) { this.manifests.push({ path, name, getFile: () => this.getFile(path) }); continue; }
+      if (!e.isDir && MANIFEST_RE.test(name)) { this.manifests.push({ path, name, getFile: () => this.getFile(path) }); continue; }
       if (hiddenBy(path)) continue;
       const depth = path.split('/').length - 1;
       if (!recursive && depth > 0) continue;
@@ -278,7 +278,7 @@ export class MemRoot extends BaseRoot {
     const out = []; this.manifests = [];
     for (const [path, e] of this.map) {
       const name = basename(path);
-      if (!e.isDir && !dirname(path) && MANIFEST_RE.test(name)) { this.manifests.push({ path, name, getFile: async () => e.file }); continue; }
+      if (!e.isDir && MANIFEST_RE.test(name)) { this.manifests.push({ path, name, getFile: async () => e.file }); continue; }
       if (path.split('/').some((seg) => !this._accept(seg, { includeHidden, includeTemp }) && !MANIFEST_RE.test(seg))) continue;
       const depth = path.split('/').length - 1;
       if (!recursive && depth > 0) continue;

@@ -122,6 +122,18 @@
         <li>To go back, choose Restore, open the same folder, and pick the undo file. It also works from the History tab, or on another computer.</li>
       </ol>
 
+      <h2>Changing extensions</h2>
+      <p>Choose <strong>Extensions</strong> at the top of the Renamer. It works on a folder, a ZIP or imported files, subfolders included. Every extension found is listed with its count: type a new one next to any group (<code>-</code> removes it), or use the quick options: letter case, unify spellings (<code>jpeg</code> to <code>jpg</code>, <code>htm</code> to <code>html</code>), fix extensions that do not match the file contents, and add missing ones. It writes the same undo file as any rename, so Restore puts the old extensions back.</p>
+
+      <h2>Restoring on another computer</h2>
+      <p>Undo and backup files store paths relative to the folder or ZIP that was changed, never the full path on your disk, so they travel with the files. On the other computer:</p>
+      <ol>
+        <li>Open the folder, ZIP or imported copy that holds the files. It can be the same folder, its parent, or wherever the ZIP was extracted. Undo files are found in subfolders too.</li>
+        <li>Only have the JSON file? In Restore, choose <em>Open an undo file first</em> (or <em>Open a backup file first</em> in the Tag editor), then pick the folder.</li>
+        <li>NameTag lines the saved paths up automatically and shows how many items it found. If the files sit elsewhere, use <em>Choose the folder on this computer</em>, or adjust the two boxes: skip leading folders of the saved paths, and the subfolder the files are in here. Subfolders that were renamed or moved are found by unique file names.</li>
+        <li>Check the preview, then restore.</li>
+      </ol>
+
       <h2>Template variables</h2>
       <p>Use these in the Template rule, in Add text, and in Replace with. Add a fallback with <code>|</code>, for example <code>{artist|Unknown}</code>.</p>
       <div class="table-wrap"><table>

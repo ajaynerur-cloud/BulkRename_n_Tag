@@ -2,7 +2,9 @@
 // save with a JSON backup of the previous tags, and restore from that backup.
 import { h, icon, btn, clear, toast, openDialog, confirmDialog, progress, tick, menu, VirtualList, download, saveBlob, pickFiles, readFileText, renderFields } from '../core/ui.js';
 import { dirname, basename, naturalCompare, debounce, formatBytes, formatDuration, formatDate, bytesToBase64, base64ToBytes, changeCase, escapeRegex } from '../core/utils.js';
-import { DirRoot, MemRoot, FilesRoot, support, filesFromDataTransfer } from '../core/sources.js';
+import { DirRoot, MemRoot, FilesRoot, ZipRoot, support, filesFromDataTransfer } from '../core/sources.js';
+import { detectRemap, mapPath, isIdentity } from '../core/remap.js';
+import { remapPanel } from '../core/remap-ui.js';
 import { createTagManifest, manifestFileName, parseManifest } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
 import { readTags, writeTags, AUDIO_EXT } from './index.js';
@@ -14,7 +16,7 @@ import { makeRule } from '../renamer/rules.js';
 const OPTS_KEY = 'nametag.tagger.options';
 const T = {
   el: null, mode: 'edit', root: null, rows: [], view: [], sel: new Set(), anchor: -1, filter: 'all', search: '', list: null, tab: 'main',
-  opts: { id3Version: 3, id3v1: 'update', coverMax: 0 }, snapshot: null, restore: null, onSendToRenamer: null, images: [],
+  opts: { id3Version: 3, id3v1: 'update', coverMax: 0 }, snapshot: null, restore: null, onSendToRenamer: null, images: [], pending: null, pendingShown: null,
 };
 try { Object.assign(T.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
 const saveOpts = () => { try { localStorage.setItem(OPTS_KEY, JSON.stringify(T.opts)); } catch { /* ignore */ } };
@@ -53,6 +55,7 @@ function renderSource() {
   bar.append(anchor(btn('', (e) => menu(e.currentTarget, [
     { label: 'Import files (copy)…', icon: 'upload', onClick: () => importFiles(false) },
     { label: 'Import a folder (copy)…', icon: 'folder', onClick: () => importFiles(true) },
+    { label: 'Open a ZIP…', icon: 'file-archive', hint: 'Edit audio inside a ZIP and save it back', onClick: () => openZip() },
     { separator: true },
     { label: 'Reload tags from disk', icon: 'refresh-cw', disabled: !T.root, onClick: () => load() },
   ]), { ic: 'ellipsis-vertical', title: 'More sources' })));
@@ -66,7 +69,7 @@ function renderSource() {
   }
   const dirty = T.rows.filter((r) => r.dirty).length;
   line.append(icon(T.root.kind === 'dir' ? 'folder' : 'file-music'), h('strong', null, T.root.name),
-    h('span', { class: 'pill' }, { dir: 'Folder', files: T.root.writable ? 'Files' : 'Files (copy)', mem: 'Imported copy' }[T.root.kind] || T.root.kind),
+    h('span', { class: 'pill' }, { dir: 'Folder', files: T.root.writable ? 'Files' : 'Files (copy)', mem: 'Imported copy', zip: 'ZIP archive' }[T.root.kind] || T.root.kind),
     h('span', { class: 'muted' }, `${T.rows.length} audio files`), dirty ? h('span', { class: 'pill pill-accent' }, `${dirty} unsaved`) : '');
 }
 
@@ -74,6 +77,19 @@ function renderSource() {
 async function openFiles() { try { await setRoot(await FilesRoot.pick()); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); } }
 async function openFolder() {
   try { const r = await DirRoot.pick(); if (!(await r.verifyPermission(true))) return; await setRoot(r); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
+}
+async function openZip() {
+  try {
+    let file; let handle = null;
+    if (window.showOpenFilePicker) {
+      [handle] = await window.showOpenFilePicker({ id: 'nametag-zip', types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }] });
+      file = await handle.getFile();
+    } else {
+      [file] = await pickFiles({ accept: '.zip,application/zip', multiple: false });
+      if (!file) return;
+    }
+    await setRoot(await ZipRoot.load(file, handle));
+  } catch (e) { if (e.name !== 'AbortError') toast(`Could not open ZIP: ${e.message}`, { type: 'error' }); }
 }
 async function importFiles(directory) {
   const files = await pickFiles({ directory, accept: directory ? '' : 'audio/*,.mp3,.flac,.m4a,.m4b,.ogg,.oga,.opus,.wav,.aif,.aiff,.json' });
@@ -92,6 +108,7 @@ export async function openDropped(dt) {
     } catch { /* fall back */ }
   }
   const files = await filesFromDataTransfer(dt);
+  if (files.length === 1 && /\.zip$/i.test(files[0].name)) { await setRoot(await ZipRoot.load(files[0])); return; }
   if (files.length) await setRoot(new MemRoot(files, 'Dropped files'));
 }
 export async function openRestore(root, manifest) { T.mode = 'restore'; await setRoot(root, true); await loadRestore(manifest); }
@@ -101,8 +118,18 @@ async function setRoot(root, keepMode = false) {
   if (hasUnsaved() && !(await confirmDialog('Discard unsaved tag changes?', 'You have edits that are not saved yet.', { okText: 'Discard', danger: true }))) return;
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) return;
   T.root = root; T.sel.clear(); T.restore = null;
-  if (!keepMode) T.mode = 'edit';
+  if (!keepMode && !T.pending) T.mode = 'edit';
   await load();
+  if (T.pending) {
+    const pend = T.pending; T.pending = null;
+    const here = (root.manifests || []).find((m) => m.name === pend.fileName);
+    await loadRestore(pend.manifest, here ? here.path : null, pend.fileName);
+  }
+}
+function pickTargetFor(manifest, fileName, how) {
+  T.pending = { manifest, fileName };
+  const go = { folder: openFolder, files: openFiles, zip: openZip, import: () => importFiles(true) }[how];
+  Promise.resolve(go()).finally(() => { if (T.pending?.manifest === manifest) { T.pending = null; render(); } });
 }
 
 async function load() {
@@ -619,7 +646,7 @@ async function save() {
   const zip = inZip ? new globalThis.JSZip() : null;
   const writeManifest = async () => {
     const text = JSON.stringify(manifest, null, 2);
-    if (root.kind === 'dir') await root.writeText(mName, text);
+    if (root.kind === 'dir' || root.kind === 'zip') await root.writeText(mName, text);
     else if (zip) zip.file(mName, text);
   };
   try { await writeManifest(); } catch (e) { if (!(await confirmDialog('Could not write the backup file', `${e.message}. Continue? The backup stays in History and is offered as a download.`))) return; }
@@ -642,11 +669,12 @@ async function save() {
   manifest.completed = done;
   if (errors.length) manifest.errors = errors;
   try { await writeManifest(); } catch { /* ignore */ }
+  if (root.kind === 'zip') { p.set(0, 100, 'Building ZIP…'); try { await root.finalize({ onProgress: (pc) => p.set(Math.round(pc), 100, 'Building ZIP…'), download }); } catch (e) { errors.push(`ZIP: ${e.message}`); } }
   if (zip) { p.set(0, 100, 'Building ZIP…'); download(await zip.generateAsync({ type: 'blob' }, (m) => p.set(Math.round(m.percent), 100, 'Building ZIP…')), `${root.name}-tagged.zip`); }
   p.close();
   await addHistory({ id: manifest.id, type: 'tags', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: manifest.status });
   if (errors.length) openDialog({ title: `${errors.length} file(s) could not be saved`, body: h('ul', { class: 'mono small' }, errors.map((e) => h('li', null, e))) });
-  else toast(`Saved tags in ${done} file${done === 1 ? '' : 's'}.${zip ? ' Downloaded as ZIP.' : ''}`, { type: 'success' });
+  else toast(`Saved tags in ${done} file${done === 1 ? '' : 's'}.${zip ? ' Downloaded as ZIP.' : root.kind === 'zip' ? ' The ZIP was updated.' : ''}`, { type: 'success' });
   refreshView(); renderSource();
 }
 
@@ -654,42 +682,104 @@ async function save() {
 function renderRestore(body) {
   const wrap = h('div', { class: 'restore' });
   body.append(wrap);
+  const openBackup = async () => {
+    const [f] = await pickFiles({ accept: '.json,application/json', multiple: false });
+    if (!f) return null;
+    try { const m = parseManifest(await readFileText(f)); if (m.type !== 'tags') throw new Error('This is a rename undo file. Open it in the Renamer.'); return { manifest: m, fileName: f.name }; } catch (e) { toast(e.message, { type: 'error' }); return null; }
+  };
+  const targets = (manifest, fileName) => [
+    support.dirPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { ic: 'folder-open', cls: 'btn-primary' }) : null,
+    support.filePicker ? btn('Open files', () => pickTargetFor(manifest, fileName, 'files'), { ic: 'file-music' }) : null,
+    btn('Open ZIP', () => pickTargetFor(manifest, fileName, 'zip'), { ic: 'file-archive' }),
+    btn('Import a folder', () => pickTargetFor(manifest, fileName, 'import'), { ic: 'upload' }),
+  ];
+  if (!T.root) {
+    const pend = T.pendingShown;
+    wrap.append(h('div', { class: 'panel' },
+      h('div', { class: 'panel-head' }, icon('undo-2'), h('h2', null, 'Restore previous tags')),
+      pend
+        ? h('p', null, 'Backup loaded: ', h('strong', { class: 'mono' }, pend.fileName), `. It was made for "${pend.manifest.root}". Now choose where those audio files are on this computer.`)
+        : h('p', null, 'Open the folder, files or ZIP that were edited; backups inside are found automatically. Got only the backup file, for example on another computer? Open it first, then choose the folder.'),
+      h('div', { class: 'btn-row' },
+        ...(pend ? targets(pend.manifest, pend.fileName) : [
+          support.dirPicker ? btn('Open folder', () => openFolder(), { ic: 'folder-open', cls: 'btn-primary' }) : null,
+          support.filePicker ? btn('Open files', () => openFiles(), { ic: 'file-music' }) : null,
+          btn('Open ZIP', () => openZip(), { ic: 'file-archive' }),
+        ]),
+        btn(pend ? 'Use a different backup…' : 'Open a backup file first…', async () => { const r = await openBackup(); if (r) { T.pendingShown = r; render(); } }, { ic: 'file-json', cls: 'btn-ghost' }))),
+    h('div', { class: 'panel', id: 'tg-restore-detail' }));
+    paintRestore();
+    return;
+  }
+  T.pendingShown = null;
   const found = (T.root?.manifests || []).filter((m) => /^nametag-tags-/i.test(m.name));
   wrap.append(h('div', { class: 'panel' },
     h('div', { class: 'panel-head' }, icon('undo-2'), h('h2', null, 'Restore previous tags')),
-    h('p', null, T.root ? 'Pick a tag backup. Files are matched by their path inside the folder you opened.' : 'Open the same files or folder first, then pick the backup file that NameTag saved.'),
-    found.length ? h('ul', { class: 'manifest-list' }, found.map((m) => h('li', null, h('button', { type: 'button', class: 'manifest-item', onclick: async () => { try { await loadRestore(parseManifest(await (await m.getFile()).text()), m.name); } catch (e) { toast(e.message, { type: 'error' }); } } }, icon('file-json'), h('span', { class: 'mono' }, m.name))))) : null,
+    h('p', null, 'Pick a tag backup. Files are matched by their path inside the location you opened; the paths can be adjusted if it was made on another computer.'),
+    found.length ? h('ul', { class: 'manifest-list' }, found.map((m) => h('li', null, h('button', { type: 'button', class: `manifest-item ${T.restore?.name === m.path ? 'is-active' : ''}`, onclick: async () => { try { await loadRestore(parseManifest(await (await m.getFile()).text()), m.path); } catch (e) { toast(e.message, { type: 'error' }); } } }, icon('file-json'), h('span', { class: 'mono' }, m.path))))) : h('p', { class: 'muted' }, 'No backups found here.'),
     h('div', { class: 'btn-row' },
-      !T.root && support.dirPicker ? btn('Open folder', () => openFolder(), { ic: 'folder-open', cls: 'btn-primary' }) : null,
-      !T.root && support.filePicker ? btn('Open files', () => openFiles(), { ic: 'file-music' }) : null,
-      btn('Open a backup file…', async () => {
-        const [f] = await pickFiles({ accept: '.json,application/json', multiple: false });
-        if (!f) return;
-        try { const m = parseManifest(await readFileText(f)); if (m.type !== 'tags') throw new Error('This is a rename undo file. Open it in the Renamer.'); await loadRestore(m, null); } catch (e) { toast(e.message, { type: 'error' }); }
-      }, { ic: 'upload', disabled: !T.root }))),
+      btn('Open a backup file…', async () => { const r = await openBackup(); if (r) await loadRestore(r.manifest, null, r.fileName); }, { ic: 'upload' }))),
   h('div', { class: 'panel', id: 'tg-restore-detail' }));
   paintRestore();
 }
 
-async function loadRestore(manifest, name) {
-  const byPath = new Map(T.rows.map((r) => [r.path, r])); const byName = new Map(T.rows.map((r) => [r.name, r]));
-  const items = manifest.files.map((f) => ({ f, row: byPath.get(f.path) || byName.get(basename(f.path)) || null }));
-  T.restore = { manifest, name, items };
+async function loadRestore(manifest, name = null, fileName = null, remap = null) {
+  const saved = manifest.files.map((f) => f.path);
+  const present = T.rows.map((r) => r.path);
+  if (!remap) remap = detectRemap(saved, present, { allowDirs: true, hint: name ? dirname(name) : '' });
+  T.restore = { manifest, name, fileName: fileName || (name ? basename(name) : null), remap, saved, present };
+  matchRestore();
   T.mode = 'restore';
   render();
+}
+
+function matchRestore() {
+  const R = T.restore;
+  const key = (p) => p.toLowerCase();
+  const byPath = new Map(T.rows.map((r) => [key(r.path), r]));
+  const nameCount = new Map(); for (const r of T.rows) nameCount.set(key(r.name), (nameCount.get(key(r.name)) || 0) + 1);
+  const savedCount = new Map(); for (const p of R.saved) savedCount.set(key(basename(p)), (savedCount.get(key(basename(p))) || 0) + 1);
+  const byName = new Map(T.rows.filter((r) => nameCount.get(key(r.name)) === 1).map((r) => [key(r.name), r]));
+  R.items = R.manifest.files.map((f) => {
+    const mapped = mapPath(f.path, R.remap);
+    let row = mapped != null ? byPath.get(key(mapped)) : null;
+    let how = 'path';
+    if (!row && R.remap.byName && savedCount.get(key(basename(f.path))) === 1) { row = byName.get(key(basename(f.path))) || null; how = 'name'; }
+    return { f, row: row || null, how, mapped };
+  });
+  R.matched = R.items.filter((x) => x.row).length;
 }
 
 function paintRestore() {
   const box = T.el.querySelector('#tg-restore-detail');
   if (!box) return;
   clear(box);
-  if (!T.restore) { box.append(h('p', { class: 'muted' }, 'Choose a backup to see which files it covers.')); return; }
-  const { manifest: m, items } = T.restore;
+  if (!T.restore) { box.append(h('p', { class: 'muted' }, T.root ? 'Choose a backup to see which files it covers.' : 'The preview appears once the files are open.')); return; }
+  const R = T.restore;
+  const { manifest: m, items } = R;
   const ok = items.filter((x) => x.row?.model).length;
+  const all = R.matched === items.length;
+  const panel = remapPanel({
+    manifest: m, rootName: T.root.name, remap: R.remap, matched: R.matched, total: items.length,
+    samples: items.filter((x) => x.row && x.row.path !== x.f.path).slice(0, 3).map((x) => [x.f.path, x.row.path]),
+    onChange: (rm) => { R.remap = { ...R.remap, ...rm }; matchRestore(); paintRestore(); },
+    onDetect: () => { R.remap = detectRemap(R.saved, R.present, { allowDirs: true, hint: R.name ? dirname(R.name) : '' }); matchRestore(); paintRestore(); },
+    onPickFolder: (e) => menu(e.currentTarget, [
+      support.dirPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
+      support.filePicker ? { label: 'Open files…', icon: 'file-music', onClick: () => pickTargetFor(m, R.fileName, 'files') } : null,
+      { label: 'Open ZIP…', icon: 'file-archive', onClick: () => pickTargetFor(m, R.fileName, 'zip') },
+      { label: 'Import a folder (copy)…', icon: 'upload', onClick: () => pickTargetFor(m, R.fileName, 'import') },
+    ]),
+  });
   box.append(h('div', { class: 'panel-head' }, icon('rotate-ccw'), h('h2', null, 'Restore preview')),
     h('p', null, `Backup from ${formatDate(new Date(m.createdAt), 'D MMM YYYY, HH:mm')} of "${m.root}", ${m.files.length} file(s).`, m.restoredAt ? ` Already restored on ${formatDate(new Date(m.restoredAt), 'D MMM YYYY, HH:mm')}.` : ''),
-    h('ul', { class: 'restore-list mono' }, items.slice(0, 400).map(({ f, row }) => h('li', { class: row?.model ? 'st-ok' : 'st-missing' },
-      h('span', { class: 'ex-old' }, f.path), h('span', { class: 'ex-new' }, [f.before.fields.artist, f.before.fields.title].filter(Boolean).join(' – ') || '(no title)'), h('span', { class: 'pill' }, row?.model ? 'ready' : 'not open')))),
+    h('details', { class: 'remap-wrap', open: !all || !isIdentity(R.remap) ? '' : null },
+      h('summary', null, icon(all ? 'circle-check' : 'triangle-alert'), all ? `All ${items.length} files found here. Paths and folder` : 'Paths need attention'), panel),
+    h('ul', { class: 'restore-list mono' }, items.slice(0, 400).map(({ f, row, how }) => h('li', { class: row?.model ? 'st-ok' : 'st-missing' },
+      h('span', { class: 'ex-old' }, row && row.path !== f.path ? `${f.path}  (here: ${row.path})` : f.path),
+      h('span', { class: 'ex-new' }, [f.before.fields.artist, f.before.fields.title].filter(Boolean).join(' – ') || '(no title)'),
+      h('span', { class: 'pill' }, row?.model ? (how === 'name' ? 'ready, by name' : 'ready') : row ? 'unreadable' : 'not found')))),
+    items.length > 400 ? h('p', { class: 'muted' }, `…and ${items.length - 400} more.`) : null,
     h('div', { class: 'btn-row' }, btn(`Restore ${ok} file${ok === 1 ? '' : 's'}`, () => runRestore(), { cls: 'btn-primary', ic: 'rotate-ccw', disabled: !ok })));
 }
 
@@ -706,7 +796,7 @@ async function runRestore() {
   render();
   await save();
   manifest.restoredAt = new Date().toISOString();
-  if (name && T.root.kind === 'dir') { try { await T.root.writeText(name, JSON.stringify(manifest, null, 2)); } catch { /* ignore */ } }
+  if (name && (T.root.kind === 'dir')) { try { await T.root.writeText(name, JSON.stringify(manifest, null, 2)); } catch { /* ignore */ } }
   await updateHistory(manifest.id, { manifest, status: 'restored' });
   T.restore = null;
 }
