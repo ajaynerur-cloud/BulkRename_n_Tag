@@ -1,23 +1,20 @@
-# Builds the NameTag Android app (Trusted Web Activity) from this repository.
-# Output: a signed APK (install directly) and an AAB (for Google Play), as run artifacts,
-# and as a GitHub Release when you push a tag like v1.2.0.
+# Builds the NameTag Android app: the web app in public/ is bundled inside the APK (Capacitor), so it
+# opens like a normal app, works fully offline and does not depend on the website.
 #
-# One-time setup (see README, "Android APK"):
-#   Settings > Secrets and variables > Actions > Variables:
-#     PWA_HOST            your Render domain, e.g. nametag-abcd.onrender.com (no https://)
-#     ANDROID_PACKAGE_ID  optional, default app.nametag.twa
-#   Settings > Secrets and variables > Actions > Secrets (create them with the
-#   "Android signing key (run once)" workflow):
-#     ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS
-# Without the secrets the build still works, but uses a throwaway key: fine for a quick test,
-# but the app shows a browser bar and cannot be updated in place later.
+# Output: a signed APK (install directly) and an AAB (Google Play), attached to a GitHub Release
+# (direct download on the phone) and to the run's artifacts.
+#
+# One-time setup: create the signing key with the "Android signing key (run once)" workflow and add
+# its four values as repository secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS. Without them a throwaway key is used (fine for a test,
+# but a later build cannot update that install).
 name: Android APK
 
 on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version name, e.g. 1.2.0 (empty: from scripts/android/twa-config.json)'
+        description: 'Version name, e.g. 1.2.0 (empty: version from package.json)'
         required: false
   push:
     tags: ['v*']
@@ -34,17 +31,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      PWA_HOST: ${{ vars.PWA_HOST }}
-      ANDROID_PACKAGE_ID: ${{ vars.ANDROID_PACKAGE_ID }}
       ANDROID_VERSION_CODE: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-          cache: gradle
+          java-version: '21'
 
       # Only platform-tools: Google removed the legacy 'tools' package that this action requests by default.
       # The Android Gradle plugin downloads the SDK platform and build-tools it needs by itself.
@@ -52,23 +50,27 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Check project (manifest and Android intent filters)
+      - name: Check web app
         run: node scripts/check.mjs
-
-      - name: Check settings
-        run: |
-          if [ -z "$PWA_HOST" ]; then
-            echo "::warning::Repository variable PWA_HOST is not set. Using the default from scripts/android/twa-config.json. Set it to your Render domain."
-          fi
-          case "$PWA_HOST" in http*|*/*) echo "::error::PWA_HOST must be a bare domain like nametag.onrender.com (no https://, no slash)."; exit 1;; esac
 
       - name: Version
         run: |
           V="${{ inputs.version_name }}"
           if [ -z "$V" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; fi
-          if [ -z "$V" ]; then V=$(node -p "require('./scripts/android/twa-config.json').versionName"); fi
+          if [ -z "$V" ]; then V=$(node -p "require('./package.json').version"); fi
           echo "ANDROID_VERSION_NAME=$V" >> "$GITHUB_ENV"
           echo "Version $V (code $ANDROID_VERSION_CODE)"
+
+      - name: Install Capacitor
+        run: npm ci --no-audit --no-fund
+
+      - name: Create and prepare the Android project
+        run: |
+          rm -rf android
+          npx cap add android
+          node scripts/android/prepare.mjs
+          npx cap sync android
+          node scripts/check.mjs
 
       - name: Signing key
         id: key
@@ -97,43 +99,24 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleRelease bundleRelease
 
-      - name: Collect files and Digital Asset Links
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'temporary-key' }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'nametag' }}
+      - name: Verify and collect
         run: |
           mkdir -p dist
           APK=$(ls android/app/build/outputs/apk/release/*.apk | grep -v -- '-unsigned' | head -1 || true)
-          if [ -z "$APK" ]; then echo "::error::Only an unsigned APK was produced; Android refuses to install it ('problem parsing the package'). Check the signing step."; ls -la android/app/build/outputs/apk/release/; exit 1; fi
-          # Refuse to publish an APK that Android would not install.
+          if [ -z "$APK" ]; then echo "::error::Only an unsigned APK was produced; Android would refuse to install it. Check the signing step."; ls -la android/app/build/outputs/apk/release/; exit 1; fi
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
           "$APKSIGNER" verify --verbose --print-certs "$APK" | head -8
-          AAB=$(ls android/app/build/outputs/bundle/release/*.aab | head -1)
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          "$AAPT" dump badging "$APK" | head -4
           cp "$APK" "dist/NameTag-${ANDROID_VERSION_NAME}.apk"
-          cp "$AAB" "dist/NameTag-${ANDROID_VERSION_NAME}.aab"
-          SHA=$(keytool -list -v -keystore "$ANDROID_KEYSTORE_FILE" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
-          PKG="${ANDROID_PACKAGE_ID:-$(node -p "require('./scripts/android/twa-config.json').packageId")}"
-          HOST="${PWA_HOST:-$(node -p "require('./scripts/android/twa-config.json').host")}"
-          node -e "console.log(JSON.stringify([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:process.argv[1],sha256_cert_fingerprints:[process.argv[2]]}}],null,2))" "$PKG" "$SHA" > dist/assetlinks.json
+          cp android/app/build/outputs/bundle/release/*.aab "dist/NameTag-${ANDROID_VERSION_NAME}.aab"
           {
-            echo "## NameTag ${ANDROID_VERSION_NAME}"
+            echo "## NameTag ${ANDROID_VERSION_NAME} for Android"
             echo ""
-            echo "The APK is attached to a GitHub Release (link below) for direct download on your phone. The Artifacts zip holds the same files."
-            echo ""
-            echo "- Site: https://${HOST}"
-            echo "- Package: \`${PKG}\`"
-            echo "- Signing certificate SHA-256: \`${SHA}\`"
+            echo "A self-contained app: it works offline and does not need the website."
             if [ "${{ steps.key.outputs.temp }}" = "true" ]; then
               echo ""
-              echo "> **Test build with a throwaway key.** The app works but shows a browser bar, and a later build cannot update it in place. Add the signing secrets for real builds."
-            else
-              echo ""
-              echo "To remove the browser bar in the app, add this value to Render as environment variable **ANDROID_CERT_SHA256** and redeploy:"
-              echo ""
-              echo "\`\`\`"
-              echo "${SHA}"
-              echo "\`\`\`"
-              echo "Then check https://${HOST}/.well-known/assetlinks.json shows it."
+              echo "> **Test build with a throwaway key.** It installs and works, but a later build cannot update it in place. Add the signing secrets for real builds."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

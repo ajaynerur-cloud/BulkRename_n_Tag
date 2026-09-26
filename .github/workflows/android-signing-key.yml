@@ -44,7 +44,7 @@ jobs:
           ANDROID_KEY_PASSWORD      = $PASS
           ANDROID_KEY_ALIAS         = nametag
 
-          Add this on Render (Environment > ANDROID_CERT_SHA256), then redeploy:
+          Certificate SHA-256 fingerprint (for Google Play or later reference):
           $SHA
 
           Keep nametag.keystore and the password safe and private. Delete this artifact after copying.
