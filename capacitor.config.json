@@ -1,0 +1,16 @@
+{
+  "appId": "app.nametag",
+  "appName": "NameTag",
+  "webDir": "public",
+  "android": {
+    "backgroundColor": "#EEF0F2",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

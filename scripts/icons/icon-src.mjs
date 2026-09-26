@@ -96,3 +96,13 @@ export const adaptiveForeground = () => `<svg xmlns="http://www.w3.org/2000/svg"
 export const adaptiveMonochrome = () => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   ${tag({ scale: 0.66, mono: true, id: 'am' })}
 </svg>`;
+
+/** Splash screen: the icon tile centred on the app background, for any width x height. */
+export const splash = (w, h) => {
+  const s = Math.round(Math.min(w, h) * 0.34);
+  const inner = iconAny().replace('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">', '').replace(/<\/svg>\s*$/, '');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+  <rect width="${w}" height="${h}" fill="#EEF0F2"/>
+  <svg x="${(w - s) / 2}" y="${(h - s) / 2}" width="${s}" height="${s}" viewBox="0 0 512 512">${inner}</svg>
+</svg>`;
+};
