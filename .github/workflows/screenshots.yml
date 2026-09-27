@@ -1,0 +1,23 @@
+# Optional: renders NameTag in real Chrome at phone, tablet and desktop sizes (light and dark) and uploads
+# the images as the "screenshots" artifact, to check the layouts without owning every device.
+name: Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-audit --no-fund playwright@1
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/screenshots.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/*.png
