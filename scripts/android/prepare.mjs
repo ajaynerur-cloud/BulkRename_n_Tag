@@ -2,7 +2,7 @@
 // self-contained app: NameTag icons and splash, colours, storage permission for saving to Documents on
 // old Android versions, version numbers and release signing read from environment variables.
 // Usage (CI does this):  npx cap add android && node scripts/android/prepare.mjs && npx cap sync android
-import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderAndroidRes } from '../icons/build-icons.mjs';
 
@@ -65,5 +65,13 @@ edit('build.gradle', (s) => {
   }
   return g;
 });
+
+// 5. Native folder access (Storage Access Framework): the NameTagFolders plugin, registered in MainActivity.
+const javaDir = join(app, 'src/main/java', ...cfg.appId.split('.'));
+mkdirSync(javaDir, { recursive: true });
+for (const f of ['FoldersPlugin.java', 'MainActivity.java']) {
+  const src = readFileSync(join(root, 'scripts/android/java', f), 'utf8').replace(/^package [\w.]+;/m, `package ${cfg.appId};`);
+  writeFileSync(join(javaDir, f), src);
+}
 
 console.log(`Android project prepared: ${cfg.appId} ${versionName}`);

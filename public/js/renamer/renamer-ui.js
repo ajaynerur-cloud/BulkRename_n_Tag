@@ -1,7 +1,7 @@
 // Bulk renamer view: sources, rule pipeline, pattern analyser, live preview, execution with an undo file, and restore.
-import { h, icon, btn, clear, toast, openDialog, confirmDialog, promptDialog, progress, tick, menu, VirtualList, download, pickFiles, readFileText, renderFields } from '../core/ui.js';
+import { isCompact, rowHeightFor, h, icon, btn, clear, toast, openDialog, confirmDialog, promptDialog, progress, tick, menu, VirtualList, download, pickFiles, readFileText, renderFields } from '../core/ui.js';
 import { dirname, basename, splitName, naturalCompare, diffChars, debounce, formatBytes, formatDate } from '../core/utils.js';
-import { DirRoot, ZipRoot, MemRoot, support, filesFromDataTransfer } from '../core/sources.js';
+import { DirRoot, pickFolderRoot, ZipRoot, MemRoot, support, filesFromDataTransfer } from '../core/sources.js';
 import { buildPlan, executeOps, reverseOps, simulateOps } from '../core/planner.js';
 import { createRenameManifest, manifestFileName, parseManifest, summarizeManifest } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
@@ -24,7 +24,7 @@ const DEFAULT_OPTS = {
 const S = {
   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
   excluded: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
-  analysis: null, restore: null, list: null, busy: false, ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
+  analysis: null, restore: null, list: null, busy: false, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
 };
 try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
 
@@ -65,7 +65,7 @@ function segmented(options, get, set, label) {
 function renderSource() {
   const bar = S.el.querySelector('#rn-source');
   clear(bar);
-  if (support.dirPicker) bar.append(btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }));
+  if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }));
   bar.append(btn('Open ZIP', () => openZip(), { ic: 'file-archive' }));
   const more = btn('', (e) => menu(e.currentTarget, [
     { label: 'Import files…', icon: 'upload', onClick: () => importFiles(false) },
@@ -78,7 +78,7 @@ function renderSource() {
   const line = S.el.querySelector('#rn-source-line');
   clear(line);
   if (!S.root) {
-    line.append(h('span', { class: 'muted' }, support.dirPicker
+    line.append(h('span', { class: 'muted' }, support.folderPicker
       ? 'Open a folder to rename in place, or open a ZIP. You can also drop files here.'
       : 'This browser cannot rename files on disk. Import files or open a ZIP: you get a renamed ZIP back, with the undo file inside.'));
     return;
@@ -91,7 +91,7 @@ function renderSource() {
 
 /* ------------------------------------------------------------------ sources */
 async function openFolder() {
-  try { await setRoot(await DirRoot.pick()); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
+  try { await setRoot(await pickFolderRoot()); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
 }
 async function openZip() {
   try {
@@ -172,6 +172,13 @@ async function scan() {
 }
 
 /* ------------------------------------------------------------------ render */
+function setPane(v) {
+  S.pane = v;
+  S.el.querySelector('.workbench')?.classList.replace(v === 'rules' ? 'pane-preview' : 'pane-rules', `pane-${v}`);
+  S.el.querySelectorAll('.pane-switch .seg').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.pane === v)));
+  if (v === 'preview') requestAnimationFrame(() => S.list?.refresh?.());
+}
+
 function render() {
   if (!S.el) return;
   renderSource();
@@ -180,8 +187,12 @@ function render() {
   clear(body);
   S.list = null;
   if (S.mode === 'restore') { renderRestore(body); return; }
+  // Phones show one pane at a time; the switch is hidden on wider screens (CSS).
+  const paneBtn = (v, label) => h('button', { type: 'button', class: 'seg', role: 'radio', 'aria-checked': String(S.pane === v), dataset: { pane: v }, onclick: () => setPane(v) }, label);
   body.append(
-    h('div', { class: 'workbench' },
+    h('div', { class: 'segment pane-switch', role: 'radiogroup', 'aria-label': 'Show' },
+      paneBtn('rules', S.mode === 'ext' ? 'Extensions' : 'Rules'), paneBtn('preview', 'Preview')),
+    h('div', { class: `workbench pane-${S.pane}` },
       S.mode === 'ext' ? h('aside', { class: 'rules-col', 'aria-label': 'Extensions' },
         h('section', { class: 'panel ext-panel', id: 'rn-ext', 'aria-label': 'Extension changes' }),
         h('details', { class: 'panel filters', id: 'rn-filters' }, h('summary', null, icon('filter'), 'Filters and options'), h('div', { id: 'rn-filter-body' }))) :
@@ -209,7 +220,7 @@ function render() {
   if (S.mode === 'ext') renderExtPanel(); else renderRules();
   renderFilters();
   const vp = body.querySelector('#rn-list');
-  S.list = new VirtualList(vp, { rowHeight: () => (matchMedia('(max-width: 640px)').matches ? 64 : 48), renderRow: renderRow });
+  S.list = new VirtualList(vp, { rowHeight: rowHeightFor(64, 54, 48), renderRow: renderRow });
   recompute();
 }
 
@@ -283,7 +294,7 @@ function addRuleMenu(anchor) {
 
 function presetsMenu(anchor) {
   const user = loadUserPresets();
-  const use = (rules, name) => { S.rules = rules; renderRules(); changed(); toast(`Preset "${name}" loaded.`); };
+  const use = (rules, name) => { S.rules = rules; renderRules(); changed(); toast(`Preset "${name}" loaded.`); if (isCompact()) setPane('preview'); };
   menu(anchor, [
     { header: 'Built-in presets' },
     ...BUILTIN_PRESETS.map((p) => ({ label: p.name, hint: p.desc, onClick: () => use(p.rules(), p.name) })),
@@ -533,6 +544,10 @@ function paintBar() {
   const st = S.plan?.stats;
   const n = st ? st.changed : 0;
   const bad = S.rows.filter((r) => r.status === 'invalid' || r.status === 'conflict').length;
+  const pv = S.el.querySelector('.pane-switch [data-pane="preview"]');
+  if (pv) pv.textContent = S.root ? `Preview (${n.toLocaleString('en-US')})` : 'Preview';
+  const rl = S.el.querySelector('.pane-switch [data-pane="rules"]');
+  if (rl && S.mode !== 'ext') rl.textContent = `Rules (${S.rules.filter((r) => r.enabled).length})`;
   const warn = S.rows.filter((r) => r.status === 'warn' || r.status === 'renamed-suffix').length;
   const where = !S.root ? '' : S.root.kind === 'dir' ? `in "${S.root.name}"` : S.root.kind === 'zip' ? 'inside the ZIP' : 'inside the downloaded ZIP';
   bar.append(
@@ -657,7 +672,7 @@ function renderAnalyser() {
       h('p', { class: 'muted' }, s.why),
       ex.length ? h('ul', { class: 'examples mono' }, ex.map(([o, n]) => h('li', null, h('span', { class: 'ex-old' }, o), h('span', { class: 'ex-new' }, n)))) : null,
       h('div', { class: 'btn-row' },
-        btn('Use these rules', () => { S.rules = clone(); renderRules(); changed(); toast(`Applied "${s.title}". Review the preview, then press Rename.`); }, { cls: 'btn-sm btn-primary' }),
+        btn('Use these rules', () => { S.rules = clone(); renderRules(); changed(); toast(`Applied "${s.title}". Review the preview, then press Rename.`); if (isCompact()) setPane('preview'); }, { cls: 'btn-sm btn-primary' }),
         btn('Add to my rules', () => { S.rules.push(...clone()); renderRules(); changed(); }, { cls: 'btn-sm' }))));
   }
 }
@@ -737,7 +752,7 @@ function renderRestore(body) {
     } catch (e) { toast(e.message, { type: 'error' }); return null; }
   };
   const targetButtons = (manifest, fileName, primary = true) => [
-    support.dirPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { cls: primary ? 'btn-primary' : '', ic: 'folder-open' }) : null,
+    support.folderPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { cls: primary ? 'btn-primary' : '', ic: 'folder-open' }) : null,
     btn('Open ZIP', () => pickTargetFor(manifest, fileName, 'zip'), { ic: 'file-archive' }),
     btn('Import a folder', () => pickTargetFor(manifest, fileName, 'import'), { ic: 'upload' }),
   ];
@@ -750,7 +765,7 @@ function renderRestore(body) {
         : h('p', null, 'Open the folder (or ZIP) that was renamed. NameTag finds the undo files inside it, also in subfolders. Got only the undo file, for example on another computer? Open it first, then choose the folder.'),
       h('div', { class: 'btn-row' },
         ...(pend ? targetButtons(pend.manifest, pend.fileName) : [
-          support.dirPicker ? btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }) : null,
+          support.folderPicker ? btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }) : null,
           btn('Open ZIP', () => openZip(), { ic: 'file-archive' }),
           btn('Import a folder', () => importFiles(true), { ic: 'upload' }),
         ]),
@@ -809,7 +824,7 @@ function paintRestore() {
     onChange: (rm) => { R.remap = { ...R.remap, ...rm }; computeRestore(); paintRestore(); },
     onDetect: () => { R.remap = detectRemap(R.saved, R.present, { caseSensitive: S.opts.caseSensitive, allowDirs: !R.hasDirOps, hint: R.name ? dirname(R.name) : '' }); computeRestore(); paintRestore(); },
     onPickFolder: (e) => menu(e.currentTarget, [
-      support.dirPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
+      support.folderPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
       { label: 'Open ZIP…', icon: 'file-archive', onClick: () => pickTargetFor(m, R.fileName, 'zip') },
       { label: 'Import a folder (copy)…', icon: 'upload', onClick: () => pickTargetFor(m, R.fileName, 'import') },
     ]),

@@ -1,0 +1,27 @@
+NameTag update: only the files that changed since the previous zip.
+Copy them into your repository at the same paths (replace existing files), commit, then run "Android APK".
+
+New files:
+  .github/workflows/screenshots.yml
+  scripts/android/java/FoldersPlugin.java
+  scripts/android/java/MainActivity.java
+  scripts/screenshots.mjs
+  tests/saf-mock.mjs
+  tests/saf.test.mjs
+
+Changed files:
+  .gitignore
+  README.md
+  package.json
+  public/css/app.css
+  public/index.html
+  public/js/app.js
+  public/js/core/history.js
+  public/js/core/sources.js
+  public/js/core/ui.js
+  public/js/renamer/renamer-ui.js
+  public/js/tagger/tagger-ui.js
+  scripts/android/prepare.mjs
+
+Deleted files:
+  (none)

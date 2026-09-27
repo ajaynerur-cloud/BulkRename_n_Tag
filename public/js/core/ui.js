@@ -255,6 +255,13 @@ export class VirtualList {
   }
 }
 
+// ---------- layout ----------
+/** Phone layout (bottom navigation, one pane at a time). Keep in sync with the 767px breakpoint in app.css. */
+export const isCompact = () => typeof matchMedia === 'function' && matchMedia('(max-width: 767px)').matches;
+export const isCoarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+/** Row height for virtual lists: two-line rows on narrow phones, taller rows for touch. */
+export const rowHeightFor = (twoLine, touch, fine) => () => (typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches ? twoLine : isCoarse() ? touch : fine);
+
 // ---------- files ----------
 /** True inside the Android app (Capacitor), where the web view cannot follow download links. */
 export const isNativeApp = () => !!window.Capacitor?.isNativePlatform?.();

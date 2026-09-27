@@ -1,7 +1,7 @@
 // App shell: routing, theme, service worker updates, install prompt, drag and drop, and the History view.
 import { h, icon, btn, clear, toast, confirmDialog, download, isNativeApp } from './core/ui.js';
 import { formatDate } from './core/utils.js';
-import { DirRoot, support } from './core/sources.js';
+import { DirRoot, SafRoot, support } from './core/sources.js';
 import { summarizeManifest } from './core/manifest.js';
 import { listHistory, deleteHistory, clearHistory } from './core/history.js';
 import * as renamer from './renamer/renamer-ui.js';
@@ -139,8 +139,9 @@ async function renderHistory() {
 }
 
 async function restoreFromHistory(rec) {
-  if (rec.handle && rec.source === 'dir' && support.dirPicker) {
-    const root = new DirRoot(rec.handle);
+  const canReopen = rec.handle && rec.source === 'dir' && (rec.handle.saf ? support.safPicker : support.dirPicker);
+  if (canReopen) {
+    const root = rec.handle.saf ? new SafRoot(rec.handle) : new DirRoot(rec.handle);
     let ok = false;
     try { ok = await root.verifyPermission(true); } catch { ok = false; }
     if (ok) {

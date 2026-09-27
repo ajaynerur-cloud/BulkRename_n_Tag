@@ -28,11 +28,16 @@ export async function addHistory(entry) {
   // entry: {id, type, createdAt, rootName, source, manifestName, manifest, handle?, status}
   try { await tx('readwrite', (s) => s.put(entry)); } catch (e) {
     // handles may not be cloneable in some browsers — retry without
-    if (entry.handle) { const { handle, ...rest } = entry; await tx('readwrite', (s) => s.put(rest)); } else console.warn('history', e);
+    // History is a convenience: never let it break a rename or a save.
+    if (entry.handle) {
+      const { handle, ...rest } = entry;
+      try { await tx('readwrite', (s) => s.put(rest)); } catch (e2) { console.warn('history', e2); }
+    } else console.warn('history', e);
   }
 }
 export async function updateHistory(id, patch) {
-  const cur = await getHistory(id); if (!cur) return;
+  let cur = null; try { cur = await getHistory(id); } catch { return; }
+  if (!cur) return;
   await addHistory({ ...cur, ...patch });
 }
 export async function getHistory(id) { try { return await tx('readonly', (s) => s.get(id)); } catch { return null; } }

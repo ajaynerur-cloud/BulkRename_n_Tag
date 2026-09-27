@@ -148,10 +148,20 @@ Don't use the Artifacts download to install. It is always a `.zip`, and tapping 
 **How the build works:** `npx cap add android` generates the Android project, and `scripts/android/prepare.mjs` customises it with icons, splash screens, colours, storage permission, version and signing. Gradle then builds a signed APK and AAB, and the workflow verifies the signature before publishing. Nothing Android-specific is committed except `capacitor.config.json`.
 
 **In the app**
-- **Renaming uses the ZIP workflow.** Open a ZIP or select files, and the result is saved as a new ZIP. Android's web view cannot write into folders directly.
-- **Folders can't be picked.** Android's file chooser can't return a whole folder, so select all the files inside it or open a ZIP of the folder.
+- **Open folder uses Android's own folder picker** (Storage Access Framework), just as desktop Chrome uses its picker. Files are renamed and tags saved **in place**, including subfolders. Undo files and tag backups are written into that folder, and Restore works from them.
+- **Android keeps the permission.** After you allow a folder once, reopening it from History needs no second prompt.
+- **ZIPs and single files still work.** Their results are saved to `Documents/NameTag` with a Share button.
+- **Tags are read from only the part of each file that holds them**, so opening an album is fast.
+- **Name clashes are refused, not renamed.** If Android would rename a file to something other than asked (it adds " (1)" on a clash), NameTag undoes that single rename and reports it.
 - **Some features need a connection.** MusicBrainz, cover art and lyrics lookups need internet; everything else is offline.
-- **Undo files travel with the files**, so restore works across phone and computer in both directions.
+
+**Layouts:** one interface adapts to three sizes:
+- **Phones** get a bottom tab bar. The Renamer has a Rules / Preview switch, so each pane gets the full screen. Tapping a song opens a full-screen tag editor. Lists fill the screen, and menus and dialogs slide up from the bottom.
+- **Tablets** keep rules next to the preview, and the song list next to the editor.
+- **Desktops** use wide columns.
+- **Touch screens** get larger buttons and rows at every size.
+
+The optional "Screenshots" workflow renders the app in real Chrome at phone, tablet and desktop sizes, in light and dark themes.
 
 Upgrading from the earlier test build: that one had a different package name (`app.nametag.twa`), so uninstall it first. Otherwise you'll have two NameTag icons.
 
@@ -169,7 +179,7 @@ The icon was drawn for NameTag: a name tag carrying a line of text, a highlighte
 | Chrome, Edge, Opera, Brave (desktop) | Yes | Yes | Yes |
 | Firefox, Safari | No: ZIP in, renamed ZIP out | No: edited files download as a ZIP | Yes |
 | Android browser | No: same ZIP workflow | No: ZIP download | Yes, installable, with share-to-NameTag |
-| NameTag Android app (APK) | No: ZIP workflow, results saved to Documents/NameTag | No: saved to Documents/NameTag | Yes, fully offline |
+| NameTag Android app (APK) | Yes: Android's folder picker, renames in place | Yes, in place | Yes, fully offline |
 | iOS | No: same ZIP workflow | No: ZIP download | Yes, installable |
 
 ## Known limitations
@@ -192,11 +202,12 @@ public/
   js/tagger/                 bytes, model, id3, mpeg, flac, vorbis, ogg, mp4, riff, index, tools, online, tagger-ui
   vendor/jszip.min.js, fonts/ (Atkinson Hyperlegible Next and Mono, OFL), icons/
 scripts/                     stamp-version.mjs (Render build), check.mjs, icons/ (icon artwork + renderer),
-                             android/prepare.mjs (customises the generated Capacitor project)
+                             android/prepare.mjs (customises the generated Capacitor project),
+                             android/java/ (native folder plugin), screenshots.mjs
 capacitor.config.json        Android app settings (app id, name, web folder)
 store/                       Play Store listing icon
-.github/workflows/           android.yml (APK/AAB), android-signing-key.yml (one-time key), test.yml
-tests/                       renamer.test.mjs, portable.test.mjs, tags.test.mjs, fixtures/
+.github/workflows/           android.yml (APK/AAB), android-signing-key.yml (one-time key), test.yml, screenshots.yml
+tests/                       renamer, portable restore, Android folders (saf), tags; fixtures/
 render.yaml
 ```
 

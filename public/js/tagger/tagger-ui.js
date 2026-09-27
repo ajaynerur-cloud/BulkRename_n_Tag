@@ -1,8 +1,8 @@
 // Audio tag editor view: load files, multi-select editing with mixed values, tools, online lookups,
 // save with a JSON backup of the previous tags, and restore from that backup.
-import { h, icon, btn, clear, toast, openDialog, confirmDialog, progress, tick, menu, VirtualList, download, saveBlob, pickFiles, readFileText, renderFields } from '../core/ui.js';
+import { isCompact, rowHeightFor, h, icon, btn, clear, toast, openDialog, confirmDialog, progress, tick, menu, VirtualList, download, saveBlob, pickFiles, readFileText, renderFields } from '../core/ui.js';
 import { dirname, basename, naturalCompare, debounce, formatBytes, formatDuration, formatDate, bytesToBase64, base64ToBytes, changeCase, escapeRegex } from '../core/utils.js';
-import { DirRoot, MemRoot, FilesRoot, ZipRoot, support, filesFromDataTransfer } from '../core/sources.js';
+import { DirRoot, pickFolderRoot, MemRoot, FilesRoot, ZipRoot, support, filesFromDataTransfer } from '../core/sources.js';
 import { detectRemap, mapPath, isIdentity } from '../core/remap.js';
 import { remapPanel } from '../core/remap-ui.js';
 import { createTagManifest, manifestFileName, parseManifest } from '../core/manifest.js';
@@ -16,7 +16,7 @@ import { makeRule } from '../renamer/rules.js';
 const OPTS_KEY = 'nametag.tagger.options';
 const T = {
   el: null, mode: 'edit', root: null, rows: [], view: [], sel: new Set(), anchor: -1, filter: 'all', search: '', list: null, tab: 'main',
-  opts: { id3Version: 3, id3v1: 'update', coverMax: 0 }, snapshot: null, restore: null, onSendToRenamer: null, images: [], pending: null, pendingShown: null,
+  opts: { id3Version: 3, id3v1: 'update', coverMax: 0 }, snapshot: null, restore: null, onSendToRenamer: null, images: [], pending: null, pendingShown: null, sheet: false,
 };
 try { Object.assign(T.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
 const saveOpts = () => { try { localStorage.setItem(OPTS_KEY, JSON.stringify(T.opts)); } catch { /* ignore */ } };
@@ -50,7 +50,7 @@ function renderSource() {
   const bar = T.el.querySelector('#tg-source');
   clear(bar);
   if (support.filePicker) bar.append(btn('Open files', () => openFiles(), { cls: 'btn-primary', ic: 'file-music' }));
-  if (support.dirPicker) bar.append(btn('Open folder', () => openFolder(), { ic: 'folder-open' }));
+  if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { ic: 'folder-open' }));
   if (!support.filePicker) bar.append(btn('Import files', () => importFiles(false), { cls: 'btn-primary', ic: 'upload' }));
   bar.append(anchor(btn('', (e) => menu(e.currentTarget, [
     { label: 'Import files (copy)…', icon: 'upload', onClick: () => importFiles(false) },
@@ -76,7 +76,7 @@ function renderSource() {
 /* ------------------------------------------------------------------ sources */
 async function openFiles() { try { await setRoot(await FilesRoot.pick()); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); } }
 async function openFolder() {
-  try { const r = await DirRoot.pick(); if (!(await r.verifyPermission(true))) return; await setRoot(r); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
+  try { const r = await pickFolderRoot(); if (!(await r.verifyPermission(true))) return; await setRoot(r); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
 }
 async function openZip() {
   try {
@@ -164,7 +164,7 @@ function render() {
   T.list = null;
   if (T.mode === 'restore') { renderRestore(body); return; }
   body.append(
-    h('div', { class: 'tagbench' },
+    h('div', { class: `tagbench ${T.sheet ? 'is-editing' : ''}` },
       h('section', { class: 'tag-table', 'aria-label': 'Files' },
         h('div', { class: 'col-head' },
           h('div', { class: 'col-actions' },
@@ -182,7 +182,7 @@ function render() {
       h('aside', { class: 'editor', id: 'tg-editor', 'aria-label': 'Tag editor' })),
     h('div', { class: 'actionbar', id: 'tg-bar' }),
   );
-  T.list = new VirtualList(body.querySelector('#tg-list'), { rowHeight: () => (matchMedia('(max-width: 640px)').matches ? 58 : 40), renderRow });
+  T.list = new VirtualList(body.querySelector('#tg-list'), { rowHeight: rowHeightFor(58, 52, 40), renderRow });
   refreshView();
 }
 
@@ -216,7 +216,7 @@ function renderRow(el, vi) {
   const sel = T.sel.has(i);
   el.className = `vrow trow ${sel ? 'is-sel' : ''} ${r.dirty ? 'is-dirty' : ''} ${r.error ? 'is-error' : ''}`;
   el.setAttribute('aria-selected', String(sel));
-  el.onclick = (e) => { if (e.target.closest('input')) return; clickRow(vi, e); };
+  el.onclick = (e) => { if (e.target.closest('input')) return; clickRow(vi, e); if (isCompact() && !e.shiftKey && !e.ctrlKey && !e.metaKey) openSheet(true); };
   el.append(
     h('input', { type: 'checkbox', class: 'check', checked: sel, 'aria-label': `Select ${r.name}`, onchange: (e) => { if (e.target.checked) T.sel.add(i); else T.sel.delete(i); T.anchor = vi; selectionChanged(); } }),
     h('span', { class: 'tcell tfile mono', title: r.error ? `Cannot read: ${r.error}` : r.path }, r.dirty ? h('span', { class: 'dot', title: 'Unsaved changes' }) : null, r.error ? icon('triangle-alert') : null, r.name,
@@ -235,6 +235,14 @@ function clickRow(vi, e) {
   } else if (e.ctrlKey || e.metaKey) { if (T.sel.has(i)) T.sel.delete(i); else T.sel.add(i); T.anchor = vi; }
   else { T.sel.clear(); T.sel.add(i); T.anchor = vi; }
   selectionChanged();
+}
+
+/** Phones: the editor is a full-screen sheet over the list. */
+function openSheet(on) {
+  T.sheet = on && T.sel.size > 0;
+  T.el.querySelector('.tagbench')?.classList.toggle('is-editing', T.sheet);
+  if (T.sheet) T.el.querySelector('#tg-editor')?.scrollTo?.(0, 0);
+  else requestAnimationFrame(() => T.list?.refresh());
 }
 
 function selectionChanged(rerender = true) {
@@ -269,7 +277,9 @@ function renderEditor() {
   T.snapshot = new Map(rows.map((r) => [r, { ...r.model.fields }]));
   const tabs = [['main', 'Main'], ['more', 'More'], ['cover', 'Cover'], ['lyrics', 'Lyrics'], ['custom', 'Custom'], ['info', 'Info']];
   ed.append(
-    h('div', { class: 'panel-head' }, icon('tag'), h('h2', null, rows.length === 1 ? rows[0].name : `${rows.length} files selected`)),
+    h('div', { class: 'panel-head editor-head' },
+      h('button', { type: 'button', class: 'btn btn-sm sheet-back', onclick: () => openSheet(false) }, icon('arrow-left'), 'Files'),
+      icon('tag'), h('h2', null, rows.length === 1 ? rows[0].name : `${rows.length} files selected`)),
     h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { type: 'button', role: 'tab', class: 'tab', 'aria-selected': String(T.tab === k), onclick: () => { T.tab = k; renderEditor(); } }, l))),
   );
   const pane = h('div', { class: 'tab-pane', role: 'tabpanel' });
@@ -423,7 +433,10 @@ function paintBar() {
     h('div', { class: 'bar-info' },
       h('p', { class: 'bar-count' }, T.root ? h('strong', null, `${dirty} file${dirty === 1 ? '' : 's'}`) : 'No files', T.root ? ' with unsaved changes' : ''),
       h('p', { class: 'bar-sub muted' }, T.sel.size ? `${T.sel.size} selected. ` : '', dirty ? `A backup of the old tags will be saved ${where}.` : '')),
-    btn(T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty || ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty }),
+    h('div', { class: 'btn-row' },
+      // Phones: open the editor sheet for files ticked with the checkboxes.
+      btn(T.sel.size > 1 ? `Edit ${T.sel.size}` : 'Edit', () => openSheet(true), { cls: 'only-compact', ic: 'pencil', disabled: !T.sel.size }),
+      btn(T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty || ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty })),
   );
 }
 
@@ -656,7 +669,7 @@ async function save() {
   for (const r of rows) {
     if (p.cancelled) break;
     try {
-      const file = await r.getFile();
+      const file = root.getFullFile ? await root.getFullFile(r.path) : await r.getFile();
       const { blob } = await writeTags(file, r.model, { id3Version: T.opts.id3Version, id3v1: T.opts.id3v1 });
       if (zip) zip.file(r.path, blob); else await root.writeFile(r.path, blob);
       if (root.kind === 'mem') await root.writeFile(r.path, blob);
@@ -688,7 +701,7 @@ function renderRestore(body) {
     try { const m = parseManifest(await readFileText(f)); if (m.type !== 'tags') throw new Error('This is a rename undo file. Open it in the Renamer.'); return { manifest: m, fileName: f.name }; } catch (e) { toast(e.message, { type: 'error' }); return null; }
   };
   const targets = (manifest, fileName) => [
-    support.dirPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { ic: 'folder-open', cls: 'btn-primary' }) : null,
+    support.folderPicker ? btn('Open folder', () => pickTargetFor(manifest, fileName, 'folder'), { ic: 'folder-open', cls: 'btn-primary' }) : null,
     support.filePicker ? btn('Open files', () => pickTargetFor(manifest, fileName, 'files'), { ic: 'file-music' }) : null,
     btn('Open ZIP', () => pickTargetFor(manifest, fileName, 'zip'), { ic: 'file-archive' }),
     btn('Import a folder', () => pickTargetFor(manifest, fileName, 'import'), { ic: 'upload' }),
@@ -702,7 +715,7 @@ function renderRestore(body) {
         : h('p', null, 'Open the folder, files or ZIP that were edited; backups inside are found automatically. Got only the backup file, for example on another computer? Open it first, then choose the folder.'),
       h('div', { class: 'btn-row' },
         ...(pend ? targets(pend.manifest, pend.fileName) : [
-          support.dirPicker ? btn('Open folder', () => openFolder(), { ic: 'folder-open', cls: 'btn-primary' }) : null,
+          support.folderPicker ? btn('Open folder', () => openFolder(), { ic: 'folder-open', cls: 'btn-primary' }) : null,
           support.filePicker ? btn('Open files', () => openFiles(), { ic: 'file-music' }) : null,
           btn('Open ZIP', () => openZip(), { ic: 'file-archive' }),
         ]),
@@ -765,7 +778,7 @@ function paintRestore() {
     onChange: (rm) => { R.remap = { ...R.remap, ...rm }; matchRestore(); paintRestore(); },
     onDetect: () => { R.remap = detectRemap(R.saved, R.present, { allowDirs: true, hint: R.name ? dirname(R.name) : '' }); matchRestore(); paintRestore(); },
     onPickFolder: (e) => menu(e.currentTarget, [
-      support.dirPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
+      support.folderPicker ? { label: 'Open folder…', icon: 'folder-open', onClick: () => pickTargetFor(m, R.fileName, 'folder') } : null,
       support.filePicker ? { label: 'Open files…', icon: 'file-music', onClick: () => pickTargetFor(m, R.fileName, 'files') } : null,
       { label: 'Open ZIP…', icon: 'file-archive', onClick: () => pickTargetFor(m, R.fileName, 'zip') },
       { label: 'Import a folder (copy)…', icon: 'upload', onClick: () => pickTargetFor(m, R.fileName, 'import') },

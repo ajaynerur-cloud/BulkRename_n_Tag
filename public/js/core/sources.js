@@ -7,7 +7,18 @@ export const support = {
   get filePicker() { return typeof window !== 'undefined' && 'showOpenFilePicker' in window; },
   get saveFilePicker() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; },
   get handleMove() { return typeof FileSystemHandle !== 'undefined' && 'move' in FileSystemHandle.prototype; },
+  /** Android app: native folder picker (Storage Access Framework) through the NameTagFolders plugin. */
+  get safPicker() { return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.() && !!window.Capacitor?.Plugins?.NameTagFolders; },
+  /** Any way to open a real folder for in-place changes. */
+  get folderPicker() { return this.dirPicker || this.safPicker; },
 };
+
+/** Opens a real folder with the platform's own picker: Android's system folder picker in the app, the browser's elsewhere. */
+export async function pickFolderRoot() {
+  if (support.safPicker) return SafRoot.pick();
+  const r = await DirRoot.pick();
+  return r;
+}
 
 function sortEntries(list) {
   return list.sort((a, b) => {
@@ -145,6 +156,134 @@ async function copyDirRecursive(src, dst) {
       const w = await nh.createWritable(); await w.write(f); await w.close();
     }
   }
+}
+
+/* ------------------------------------------------------------------ Android folder (Storage Access Framework) */
+const b64ToBytes = (b64) => { const bin = atob(b64); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
+async function bytesToB64(blob, start, end) {
+  const buf = new Uint8Array(await blob.slice(start, end).arrayBuffer());
+  let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const SAF_CHUNK = 3 * 1024 * 1024;
+
+/** File-like view of an Android document that reads only the byte ranges asked for (tag readers need a few KB). */
+class SafFile {
+  constructor(root, id, name, size, mtime, start = 0, end = size) { Object.assign(this, { root, id, name, lastModified: mtime || Date.now(), start, end, type: '' }); }
+  get size() { return Math.max(0, this.end - this.start); }
+  slice(a = 0, b = this.size) {
+    const n = this.size; const norm = (x) => (x < 0 ? Math.max(0, n + x) : Math.min(n, x));
+    const s = norm(a); const e = Math.max(s, norm(b));
+    return new SafFile(this.root, this.id, this.name, this.end, this.lastModified, this.start + s, this.start + e);
+  }
+  async arrayBuffer() { return (await this.root._read(this.id, this.start, this.size)).buffer; }
+  async text() { return new TextDecoder().decode(await this.arrayBuffer()); }
+}
+
+/**
+ * A folder picked with Android's system picker. Behaves like DirRoot (kind 'dir'): renames happen in place,
+ * undo files are written into the folder, tags are saved into the files. Document ids are tracked per path
+ * and refreshed after a folder is renamed (Android may give its children new ids).
+ */
+export class SafRoot extends BaseRoot {
+  constructor({ saf, rootId, name }) {
+    super('dir', name || 'Folder');
+    this.handle = { saf, rootId, name };
+    this.uri = saf; this.rootId = rootId;
+    this.canRenameInPlace = true; this.allowCopyFallback = false; this.isSaf = true;
+    this.ids = new Map(); // path -> { id, isDir }
+  }
+  static get plugin() { return window.Capacitor.Plugins.NameTagFolders; }
+  static async pick() {
+    let r;
+    try { r = await SafRoot.plugin.pick(); } catch (e) { if (/cancel/i.test(e.message || e.code || '')) { const x = new Error('cancelled'); x.name = 'AbortError'; throw x; } throw e; }
+    return new SafRoot({ saf: r.uri, rootId: r.rootId, name: r.name });
+  }
+  async verifyPermission() {
+    try { const r = await SafRoot.plugin.hasAccess({ uri: this.uri }); if (r.granted) return true; } catch { /* old build */ return true; }
+    const err = new Error(`Access to "${this.name}" has expired. Open the folder again.`); err.name = 'NotAllowedError'; throw err;
+  }
+  idOf(path) { if (!path) return this.rootId; const x = this.ids.get(path); if (!x) throw new Error(`Not found in folder: ${path}`); return x.id; }
+  async _read(id, offset, length) {
+    const parts = []; let got = 0;
+    while (got < length) {
+      const n = Math.min(SAF_CHUNK, length - got);
+      const r = await SafRoot.plugin.read({ uri: this.uri, id, offset: offset + got, length: n });
+      const b = b64ToBytes(r.data || ''); parts.push(b); got += b.length;
+      if (b.length < n) break;
+    }
+    if (parts.length === 1) return parts[0];
+    const out = new Uint8Array(got); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+  async _children(id) { return (await SafRoot.plugin.list({ uri: this.uri, id, recursive: false })).entries || []; }
+  async list({ recursive = true, includeHidden = false, includeTemp = false, onProgress } = {}) {
+    const r = await SafRoot.plugin.list({ uri: this.uri, id: this.rootId, recursive });
+    const raw = (r.entries || []).sort((a, b) => a.path.length - b.path.length);
+    const out = []; this.manifests = []; this.ids.clear();
+    const skipped = new Set();
+    for (const e of raw) {
+      this.ids.set(e.path, { id: e.id, isDir: e.isDir });
+      const parent = dirname(e.path);
+      if (parent && skipped.has(parent)) { if (e.isDir) skipped.add(e.path); continue; }
+      const acc = this._accept(e.name, { includeHidden, includeTemp });
+      if (acc === 'manifest' && !e.isDir) { this.manifests.push({ path: e.path, name: e.name, getFile: () => this.getFullFile(e.path) }); continue; }
+      if (!acc) { if (e.isDir) skipped.add(e.path); continue; }
+      const depth = e.path.split('/').length - 1;
+      const ent = { path: e.path, name: e.name, isDir: e.isDir, depth, size: e.size, mtime: e.mtime };
+      if (!e.isDir) ent.getFile = async () => new SafFile(this, this.idOf(ent.path), ent.name, ent.size, ent.mtime);
+      out.push(ent);
+    }
+    onProgress?.(out.length);
+    return sortEntries(out);
+  }
+  async listNames(dirPath) { return (await this._children(this.idOf(dirPath))).map((c) => c.name); }
+  async exists(path) {
+    try { const n = basename(path).toLowerCase(); return (await this.listNames(dirname(path))).some((x) => x.toLowerCase() === n); } catch { return false; }
+  }
+  async isDirectory(path) { return !path || !!this.ids.get(path)?.isDir; }
+  async move(from, to) {
+    if (dirname(from) !== dirname(to)) throw new Error('Moving between folders is not supported in the Android app.');
+    const x = this.ids.get(from); if (!x) throw new Error(`Not found in folder: ${from}`);
+    const want = basename(to);
+    const r = await SafRoot.plugin.rename({ uri: this.uri, id: x.id, name: want });
+    if (r.name && r.name !== want) {
+      // The storage provider picked a different name (e.g. added " (1)"): undo and report instead of guessing.
+      try { await SafRoot.plugin.rename({ uri: this.uri, id: r.id, name: basename(from) }); } catch { /* keep going */ }
+      throw new Error(`Android renamed "${basename(from)}" to "${r.name}" instead of "${want}". Nothing was changed for this item.`);
+    }
+    this.ids.delete(from); this.ids.set(to, { id: r.id, isDir: x.isDir });
+    if (x.isDir) {
+      // Children may have new ids now: re-read that folder.
+      for (const k of [...this.ids.keys()]) if (k.startsWith(`${from}/`)) this.ids.delete(k);
+      const sub = (await SafRoot.plugin.list({ uri: this.uri, id: r.id, recursive: true })).entries || [];
+      for (const e of sub) this.ids.set(`${to}/${e.path}`, { id: e.id, isDir: e.isDir });
+    }
+  }
+  /** Whole file in memory (needed to write tags). */
+  async getFullFile(path) {
+    const x = this.ids.get(path); if (!x) throw new Error(`Not found in folder: ${path}`);
+    const info = (await this._children(this.idOf(dirname(path)))).find((c) => c.id === x.id) || {};
+    const bytes = await this._read(x.id, 0, info.size ?? Number.MAX_SAFE_INTEGER);
+    return new File([bytes], basename(path), { lastModified: info.mtime || Date.now() });
+  }
+  async getFile(path) { return this.getFullFile(path); }
+  async readText(path) { return (await this.getFullFile(path)).text(); }
+  async writeText(path, text) { return this.writeFile(path, new Blob([text], { type: 'application/json' })); }
+  async writeFile(path, blob) {
+    let id = this.ids.get(path)?.id || null;
+    for (let pos = 0, first = true; first || pos < blob.size; pos += SAF_CHUNK, first = false) {
+      const data = await bytesToB64(blob, pos, Math.min(blob.size, pos + SAF_CHUNK));
+      if (first && !id) {
+        const r = await SafRoot.plugin.write({ uri: this.uri, parentId: this.idOf(dirname(path)), name: basename(path), data });
+        id = r.id; this.ids.set(path, { id, isDir: false });
+      } else {
+        await SafRoot.plugin.write({ uri: this.uri, id, data, append: !first });
+      }
+    }
+  }
+  async remove(path) { await SafRoot.plugin.delete({ uri: this.uri, id: this.idOf(path) }); this.ids.delete(path); }
+  async finalize() { return { saved: true, message: 'Changes were written directly to the folder.' }; }
 }
 
 /* ------------------------------------------------------------------ ZIP (JSZip) */
