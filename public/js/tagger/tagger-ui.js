@@ -52,9 +52,12 @@ function renderSource() {
   if (support.filePicker) bar.append(btn('Open files', () => openFiles(), { cls: 'btn-primary', ic: 'file-music' }));
   if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { ic: 'folder-open' }));
   if (!support.filePicker) bar.append(btn('Import files', () => importFiles(false), { cls: 'btn-primary', ic: 'upload' }));
+  // Same as the renamer: without a real folder picker (most Android browsers), folder import is the
+  // only way in, so give it a visible button instead of burying it in the "more" menu.
+  if (!support.folderPicker) bar.append(btn('Import a folder', () => importFiles(true), { ic: 'folder' }));
   bar.append(anchor(btn('', (e) => menu(e.currentTarget, [
     { label: 'Import files (copy)…', icon: 'upload', onClick: () => importFiles(false) },
-    { label: 'Import a folder (copy)…', icon: 'folder', onClick: () => importFiles(true) },
+    support.folderPicker ? { label: 'Import a folder (copy)…', icon: 'folder', onClick: () => importFiles(true) } : null,
     { label: 'Open a ZIP…', icon: 'file-archive', hint: 'Edit audio inside a ZIP and save it back', onClick: () => openZip() },
     { separator: true },
     { label: 'Reload tags from disk', icon: 'refresh-cw', disabled: !T.root, onClick: () => load() },

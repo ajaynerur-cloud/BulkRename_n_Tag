@@ -437,6 +437,10 @@ td code { white-space: nowrap; }
 .remap-dirs li::before { content: '→'; order: 2; color: var(--muted); }
 .remap-dirs .ex-new { order: 3; }
 
+/* Inside the Android app there is no browser to "install" from and no beforeinstallprompt event,
+   so #install-btn never gets un-hidden; this just makes that explicit instead of relying on it. */
+html.is-native-app #install-btn { display: none !important; }
+
 /* ---------- responsive ----------
    Desktop (>1100px): columns side by side, sticky side panels.
    Tablet (768-1100px): still two columns, narrower side panels.

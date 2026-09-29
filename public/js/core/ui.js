@@ -1,5 +1,16 @@
 // Small DOM toolkit: element builder, icons, toasts, dialogs, menus, progress, virtual list, downloads.
 
+// Capacitor's Android runtime injects `window.Capacitor` (registerPlugin, isNativePlatform, etc.)
+// before this script runs, and it auto-loads the *native* Java side of bundled plugins such as
+// Filesystem and Share. But `Capacitor.Plugins.<Name>` (the JS proxy that actually forwards calls
+// to that native code) only gets created once something calls `registerPlugin(name)` from the web
+// side. Nothing else in this plain, bundler-free app does that, so without this call `nativeSave()`
+// below would silently find `Plugins.Filesystem` undefined in every Android build.
+if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+  window.Capacitor.registerPlugin?.('Filesystem');
+  window.Capacitor.registerPlugin?.('Share');
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export function h(tag, props, ...children) {

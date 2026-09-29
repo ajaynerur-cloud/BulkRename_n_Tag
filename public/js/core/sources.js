@@ -2,6 +2,15 @@
 // in-memory imported files (download result as ZIP), and loose file handles.
 import { dirname, basename, joinPath, isIgnoredName, MANIFEST_RE, naturalCompare } from './utils.js';
 
+// The NameTagFolders Java class is registered natively in MainActivity, but (same reason as
+// Filesystem/Share in ui.js) `window.Capacitor.Plugins.NameTagFolders` only exists once this JS
+// side also calls registerPlugin(). Without it, `support.safPicker` below is always false, the
+// "Open folder" button never appears in the Android app, and folder access falls back to the
+// picker that cannot select a whole folder on Android ("Android cannot pick a whole folder here").
+if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
+  window.Capacitor.registerPlugin?.('NameTagFolders');
+}
+
 export const support = {
   get dirPicker() { return typeof window !== 'undefined' && 'showDirectoryPicker' in window; },
   get filePicker() { return typeof window !== 'undefined' && 'showOpenFilePicker' in window; },

@@ -66,10 +66,14 @@ function renderSource() {
   const bar = S.el.querySelector('#rn-source');
   clear(bar);
   if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }));
+  // No real folder picker here (most Android browsers): "import a folder" is the only way to bring
+  // one in at all, so it gets a real, visible button instead of hiding inside the "more" menu, where
+  // it reads as "the folder won't open" rather than "there's another way to open it".
+  else bar.append(btn('Import a folder', () => importFiles(true), { cls: 'btn-primary', ic: 'folder' }));
   bar.append(btn('Open ZIP', () => openZip(), { ic: 'file-archive' }));
   const more = btn('', (e) => menu(e.currentTarget, [
     { label: 'Import files…', icon: 'upload', onClick: () => importFiles(false) },
-    { label: 'Import a folder (copy)…', icon: 'folder', onClick: () => importFiles(true) },
+    support.folderPicker ? { label: 'Import a folder (copy)…', icon: 'folder', onClick: () => importFiles(true) } : null,
     { separator: true },
     { label: 'Rescan', icon: 'refresh-cw', disabled: !S.root, onClick: () => scan() },
   ]), { title: 'More sources', ic: 'ellipsis-vertical' });
@@ -80,7 +84,7 @@ function renderSource() {
   if (!S.root) {
     line.append(h('span', { class: 'muted' }, support.folderPicker
       ? 'Open a folder to rename in place, or open a ZIP. You can also drop files here.'
-      : 'This browser cannot rename files on disk. Import files or open a ZIP: you get a renamed ZIP back, with the undo file inside.'));
+      : 'This browser cannot rename files on disk in place. Import a folder or files, or open a ZIP: you get a renamed ZIP back, with the undo file inside.'));
     return;
   }
   const kind = { dir: 'Folder', zip: 'ZIP archive', mem: 'Imported copy' }[S.root.kind] || S.root.kind;
