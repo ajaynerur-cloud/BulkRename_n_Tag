@@ -2,26 +2,59 @@ NameTag update: only the files that changed since the previous zip.
 Copy them into your repository at the same paths (replace existing files), commit, then run "Android APK".
 
 New files:
-  .github/workflows/screenshots.yml
-  scripts/android/java/FoldersPlugin.java
-  scripts/android/java/MainActivity.java
-  scripts/screenshots.mjs
-  tests/saf-mock.mjs
-  tests/saf.test.mjs
+  (none)
 
 Changed files:
-  .gitignore
-  README.md
-  package.json
   public/css/app.css
-  public/index.html
-  public/js/app.js
-  public/js/core/history.js
   public/js/core/sources.js
   public/js/core/ui.js
   public/js/renamer/renamer-ui.js
   public/js/tagger/tagger-ui.js
-  scripts/android/prepare.mjs
 
 Deleted files:
   (none)
+
+What changed and why
+---------------------
+
+1. Fixed "the folder doesn't open" in the Android app (the real bug).
+
+   Capacitor's Android WebView auto-injects `window.Capacitor` (registerPlugin,
+   isNativePlatform, etc.) and it auto-loads the *native* Java side of every
+   plugin. But `Capacitor.Plugins.<Name>` -- the JS object your web code actually
+   calls -- is only created once something on the WEB side calls
+   `Capacitor.registerPlugin(name)`. Nothing in this app ever did that for our
+   custom NameTagFolders plugin, nor for the official Filesystem/Share plugins
+   (there's no bundler here to auto-wire that up the way a normal Capacitor app
+   would). So in every built APK:
+     - `support.safPicker` was always false, so the "Open folder" button never
+       appeared at all, and
+     - `nativeSave()` (the code that writes results to Documents/NameTag) was
+       silently unable to find the Filesystem/Share plugins either.
+
+   Fix: `public/js/core/sources.js` and `public/js/core/ui.js` now call
+   `window.Capacitor.registerPlugin(...)` for NameTagFolders, Filesystem and
+   Share when running inside the native app. This is a no-op on the web (where
+   `window.Capacitor` doesn't exist), so nothing changes there.
+
+2. Mobile/Android browsers: "Import a folder" is now a visible button.
+
+   On browsers that can't open a real folder in place (every Android browser,
+   Firefox, Safari), the only way to bring a folder in at all was already there
+   ("Import a folder (copy)...") but it was hidden inside the unlabeled "..."
+   menu. A person who only sees "Open ZIP" understandably reads that as "the
+   folder won't open". Renamer and Tag editor now show a real "Import a folder"
+   button in that case, and the helper text next to it was updated to mention
+   it.
+
+3. Small mobile/Android polish.
+
+   The `is-native-app` class that was already being added to <html> inside the
+   Android app wasn't used by anything; app.css now uses it to keep the
+   "Install" button off (it only ever mattered for the web/PWA install prompt,
+   which doesn't apply once you're already in the app).
+
+After copying these files in, run the "Android APK" GitHub Action again to get
+a build with the fix (a pure JS/CSS change, so no cap add/sync setup is needed
+locally -- the existing workflow regenerates the Android project from scratch
+every time).
