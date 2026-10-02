@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NameTag: bulk renamer and audio tag editor</title>
 <meta name="description" content="Rename files, folders and ZIP contents in bulk with a pattern analyser and one-click undo. Edit MP3, FLAC, M4A, OGG, Opus, WAV and AIFF tags with backups. Runs offline in your browser.">
-<meta name="theme-color" content="#EEF0F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#F3F4F8" media="(prefers-color-scheme: light)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="NameTag">
 <meta name="application-name" content="NameTag">
-<meta name="theme-color" content="#151A22" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0D1016" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
@@ -110,6 +110,7 @@
 </header>
 
 <main id="main">
+  <div id="jobs" class="jobs" role="region" aria-label="Running jobs" aria-live="polite" hidden></div>
   <section id="view-renamer" class="view" aria-label="Renamer"></section>
   <section id="view-tagger" class="view" aria-label="Tag editor" hidden></section>
   <section id="view-history" class="view" aria-label="History" hidden></section>
@@ -124,6 +125,7 @@
         <li>Build a list of rules. They run top to bottom, and the preview updates as you type: removed characters are struck through, added ones are highlighted.</li>
         <li>The pattern analyser reads the current names, shows the pattern it found (for example <code>[##]_[text]</code>) and proposes a cleaner one with ready-made rules.</li>
         <li>Press Rename. NameTag first writes an undo file named <code>nametag-rename-DATE.json</code> into the top of the folder or ZIP, then renames. Clashes get “ (2)”, invalid names are skipped, swaps and case-only changes go through temporary names.</li>
+        <li>Renames and tag saves run in the background. A progress card appears at the top: you can open other screens, edit other files or switch to another app and it keeps going. Files are processed in parallel, but each file keeps its own number and tags. Stop finishes the items already started and leaves the rest untouched. If the app is closed mid-way, Undo puts back what was done, and Resume (in History) finishes the rest.</li>
         <li>To go back, choose Restore, open the same folder, and pick the undo file. It also works from the History tab, or on another computer.</li>
       </ol>
 
@@ -140,7 +142,7 @@
       </ol>
 
       <h2>Template variables</h2>
-      <p>Use these in the Template rule, in Add text, and in Replace with. Add a fallback with <code>|</code>, for example <code>{artist|Unknown}</code>.</p>
+      <p>Use these in the Build from template rule, in Add text, and in the Replace with box of Find and replace. Add a fallback with <code>|</code>, for example <code>{artist|Unknown}</code>.</p>
       <div class="table-wrap"><table>
         <thead><tr><th>Variable</th><th>Gives</th></tr></thead>
         <tbody>

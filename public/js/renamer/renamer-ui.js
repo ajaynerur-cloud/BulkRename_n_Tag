@@ -2,10 +2,11 @@
 import { isCompact, rowHeightFor, h, icon, btn, clear, toast, openDialog, confirmDialog, promptDialog, progress, tick, menu, VirtualList, download, pickFiles, readFileText, renderFields } from '../core/ui.js';
 import { dirname, basename, splitName, naturalCompare, diffChars, debounce, formatBytes, formatDate } from '../core/utils.js';
 import { DirRoot, pickFolderRoot, ZipRoot, MemRoot, support, filesFromDataTransfer } from '../core/sources.js';
-import { buildPlan, executeOps, reverseOps, simulateOps } from '../core/planner.js';
-import { createRenameManifest, manifestFileName, parseManifest, summarizeManifest } from '../core/manifest.js';
+import { buildPlan, executeOpsParallel, reverseOps, simulateOps } from '../core/planner.js';
+import { startJob, activeFor, conflictFor, onJobs } from '../core/jobs.js';
+import { createRenameManifest, manifestFileName, parseManifest, summarizeManifest, normaliseInterrupted } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
-import { RULES, makeRule, runPipeline, TAG_VARS } from './rules.js';
+import { RULES, RULE_GROUPS, makeRule, runPipeline, TAG_VARS } from './rules.js';
 import { analyze } from './analyzer.js';
 import { BUILTIN_PRESETS, loadUserPresets, addUserPreset, saveUserPresets, exportPresets, importPresets } from './presets.js';
 import { readTags, AUDIO_EXT } from '../tagger/index.js';
@@ -24,7 +25,7 @@ const DEFAULT_OPTS = {
 const S = {
   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
   excluded: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
-  analysis: null, restore: null, list: null, busy: false, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
+  analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
 };
 try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
 
@@ -52,6 +53,13 @@ export function mountRenamer(el) {
     h('div', { id: 'rn-body' }),
   );
   render();
+  let wasBusy = false;
+  onJobs(() => {
+    const busy = !!activeFor(S.root);
+    if (busy === wasBusy) return;
+    wasBusy = busy; paintBar();
+    if (S.mode === 'restore') paintRestore();
+  });
 }
 
 function segmented(options, get, set, label) {
@@ -212,7 +220,7 @@ function render() {
         h('div', { class: 'col-head' }, h('h2', null, 'Preview'),
           h('div', { class: 'col-actions' },
             h('label', { class: 'search' }, icon('search'), h('input', { class: 'input', type: 'search', placeholder: 'Find in names', value: S.search, 'aria-label': 'Find in names', oninput: (e) => { S.search = e.target.value; filterRows(); } })),
-            h('label', { class: 'field-check compact' }, h('input', { type: 'checkbox', class: 'check', checked: S.opts.changedOnly, onchange: (e) => { S.opts.changedOnly = e.target.checked; saveState(); filterRows(); } }), h('span', null, 'Changed only')))),
+            h('label', { class: 'chip-toggle' }, h('input', { type: 'checkbox', checked: S.opts.changedOnly, onchange: (e) => { S.opts.changedOnly = e.target.checked; saveState(); filterRows(); } }), h('span', null, 'Changed only')))),
         h('div', { class: 'preview-head', role: 'row' },
           h('input', { type: 'checkbox', class: 'check', title: 'Include all', 'aria-label': 'Include all', id: 'rn-all', onchange: (e) => toggleAll(e.target.checked) }),
           h('span', null, 'Current name'), h('span', null, 'New name'), h('span', { class: 'sr-only' }, 'Status')),
@@ -247,13 +255,19 @@ function ruleSummary(r) {
   for (const f of def.fields) {
     if (f.show && !f.show(r.opts)) continue;
     const v = r.opts[f.key];
-    if (v === f.default || v === '' || v == null) continue;
-    if (f.type === 'bool') { if (v) parts.push(f.label.replace(/\s*\(.*\)$/, '')); continue; }
-    const shown = f.type === 'select' ? (f.options.find((o) => o[0] === v) || [v, v])[1] : String(v);
-    parts.push(`${f.label.replace(/\s*\(.*\)$/, '')}: ${shown.length > 28 ? `${shown.slice(0, 27)}…` : shown}`);
-    if (parts.length >= 3) break;
+    if (v === '' || v == null) continue;
+    const label = f.label.replace(/\s*\(.*\)$/, '');
+    if (f.type === 'bool') { if (v) parts.push(label); continue; }
+    // Defaults are noise ("Dashes: Keep"), except for the rule's main choice and the fields that carry its meaning.
+    const primary = f === def.fields.find((x) => x.type === 'select') || ['find', 'tpl', 'sep', 'marker', 'order', 'fmt'].includes(f.key);
+    if (v === f.default && !primary) continue;
+    let shown = f.type === 'select' ? (f.options.find((o) => o[0] === v) || [v, v])[1] : String(v);
+    // Make whitespace-only values (a " - " separator, a single space) visible instead of looking empty.
+    if (typeof v === 'string' && v !== v.trim()) shown = `“${v.replace(/ /g, '·')}”`;
+    parts.push(`${label}: ${shown}`);
+    if (parts.length >= 4) break;
   }
-  return parts.join(', ') || def.desc;
+  return parts.join(' · ') || def.desc;
 }
 
 function renderRules() {
@@ -263,13 +277,16 @@ function renderRules() {
   if (!S.rules.length) ol.append(h('li', { class: 'rule-empty' }, 'No rules yet. Add one, pick a preset, or use a suggestion from the analyser below.'));
   S.rules.forEach((r, i) => {
     const def = RULES[r.type];
-    const summary = h('span', { class: 'rule-summary' }, ruleSummary(r));
+    const sumText = ruleSummary(r);
+    const summary = h('span', { class: 'rule-summary', title: sumText }, sumText);
     const bodyId = `rule-body-${r.id}`;
     const li = h('li', { class: `rule ${r.enabled ? '' : 'is-off'} ${r.open ? 'is-open' : ''}` },
       h('div', { class: 'rule-head' },
         h('span', { class: 'rule-num', 'aria-hidden': 'true' }, String(i + 1)),
         h('button', { type: 'button', class: 'rule-toggle', 'aria-expanded': String(!!r.open), 'aria-controls': bodyId, onclick: () => { r.open = !r.open; renderRules(); } },
-          icon(def.icon || 'wand-sparkles'), h('span', { class: 'rule-title' }, def.label), summary),
+          h('span', { class: 'rule-ic', 'aria-hidden': 'true' }, icon(def.icon || 'wand-sparkles')),
+          h('span', { class: 'rule-text' }, h('span', { class: 'rule-title' }, def.label), summary),
+          icon(r.open ? 'chevron-up' : 'chevron-down', 'rule-chev')),
         h('input', { type: 'checkbox', class: 'switch', checked: r.enabled, title: r.enabled ? 'Rule is on' : 'Rule is off', 'aria-label': `Enable ${def.label}`, onchange: (e) => { r.enabled = e.target.checked; li.classList.toggle('is-off', !r.enabled); changed(); } }),
         withAnchor(btn('', (e) => menu(e.currentTarget, [
           { label: 'Move up', icon: 'chevron-up', disabled: i === 0, onClick: () => moveRule(i, -1) },
@@ -280,7 +297,7 @@ function renderRules() {
         ]), { cls: 'btn-icon', title: 'Rule actions', ic: 'ellipsis-vertical' }))),
     );
     if (r.open) {
-      const form = renderFields(ruleFields(def), r.opts, () => { summary.textContent = ruleSummary(r); changed(); });
+      const form = renderFields(ruleFields(def), r.opts, () => { const t = ruleSummary(r); summary.textContent = t; summary.title = t; changed(); });
       li.append(h('div', { class: 'rule-body', id: bodyId }, h('p', { class: 'rule-desc' }, def.desc), form));
     }
     ol.append(li);
@@ -290,10 +307,15 @@ function renderRules() {
 function moveRule(i, d) { const [r] = S.rules.splice(i, 1); S.rules.splice(i + d, 0, r); renderRules(); changed(); }
 
 function addRuleMenu(anchor) {
-  menu(anchor, [{ header: 'Add a rule' }, ...Object.entries(RULES).map(([type, def]) => ({
+  const item = ([type, def]) => ({
     label: def.label, icon: def.icon, hint: def.desc,
     onClick: () => { const r = makeRule(type); r.open = true; S.rules.push(r); renderRules(); changed(); },
-  }))]);
+  });
+  const all = Object.entries(RULES);
+  menu(anchor, RULE_GROUPS.flatMap(([g, title]) => {
+    const list = all.filter(([, d]) => (d.group || 'advanced') === g);
+    return list.length ? [{ header: title }, ...list.map(item)] : [];
+  }), { cls: 'menu-wide' });
 }
 
 function presetsMenu(anchor) {
@@ -522,8 +544,8 @@ function renderRow(el, i) {
   const { e } = r;
   const changedName = r.newName !== e.name;
   const parts = diffChars(e.name, changedName ? r.newName : e.name);
-  const oldEl = h('span', { class: 'fname mono' }, parts.filter((p) => p.t !== 'add').map((p) => (p.t === 'del' ? h('del', null, p.s) : p.s)));
-  const newEl = h('span', { class: `fname mono ${changedName ? '' : 'muted'}` }, changedName ? parts.filter((p) => p.t !== 'del').map((p) => (p.t === 'add' ? h('mark', null, p.s) : p.s)) : (r.status === 'excluded' ? r.wanted : '—'));
+  const oldEl = h('span', { class: 'fname mono', title: e.name }, parts.filter((p) => p.t !== 'add').map((p) => (p.t === 'del' ? h('del', null, p.s) : p.s)));
+  const newEl = h('span', { class: `fname mono ${changedName ? '' : 'muted'}`, title: changedName ? r.newName : null }, changedName ? parts.filter((p) => p.t !== 'del').map((p) => (p.t === 'add' ? h('mark', null, p.s) : p.s)) : (r.status === 'excluded' ? r.wanted : '—'));
   const dir = dirname(e.path);
   const [ic, label] = STATUS[r.status] || STATUS.unchanged;
   const tip = r.issues.length ? `${label}: ${r.issues.map((x) => x.msg).join('; ')}` : label;
@@ -553,6 +575,7 @@ function paintBar() {
   const rl = S.el.querySelector('.pane-switch [data-pane="rules"]');
   if (rl && S.mode !== 'ext') rl.textContent = `Rules (${S.rules.filter((r) => r.enabled).length})`;
   const warn = S.rows.filter((r) => r.status === 'warn' || r.status === 'renamed-suffix').length;
+  const running = activeFor(S.root);
   const where = !S.root ? '' : S.root.kind === 'dir' ? `in "${S.root.name}"` : S.root.kind === 'zip' ? 'inside the ZIP' : 'inside the downloaded ZIP';
   bar.append(
     h('div', { class: 'bar-info' },
@@ -560,8 +583,8 @@ function paintBar() {
       h('p', { class: 'bar-sub muted' },
         bad ? h('span', { class: 'bad' }, `${bad} skipped. `) : null,
         warn ? h('span', { class: 'warn' }, `${warn} with warnings. `) : null,
-        S.root && n ? `An undo file will be saved ${where}.` : '')),
-    btn(S.root?.kind === 'dir' ? `Rename ${n || ''}`.trim() : 'Rename and save ZIP', () => runRename(), { cls: 'btn-primary btn-lg', ic: 'play', disabled: !n || S.busy }),
+        running ? 'Running in the background. You can switch screens; progress is at the top.' : S.root && n ? `An undo file will be saved ${where}.` : '')),
+    btn(running ? 'Renaming…' : S.root?.kind === 'dir' ? `Rename ${n || ''}`.trim() : 'Rename and save ZIP', () => runRename(), { cls: 'btn-primary btn-lg', ic: 'play', disabled: !n || !!running }),
   );
 }
 
@@ -674,7 +697,7 @@ function renderAnalyser() {
     box.append(h('article', { class: `suggestion ${s.recommended ? 'is-rec' : ''}` },
       h('h4', null, s.title, s.recommended ? h('span', { class: 'pill pill-accent' }, 'Recommended') : null),
       h('p', { class: 'muted' }, s.why),
-      ex.length ? h('ul', { class: 'examples mono' }, ex.map(([o, n]) => h('li', null, h('span', { class: 'ex-old' }, o), h('span', { class: 'ex-new' }, n)))) : null,
+      ex.length ? h('ul', { class: 'examples examples-stack mono' }, ex.map(([o, n]) => h('li', null, h('span', { class: 'ex-old', title: o }, o), h('span', { class: 'ex-new', title: n }, n)))) : null,
       h('div', { class: 'btn-row' },
         btn('Use these rules', () => { S.rules = clone(); renderRules(); changed(); toast(`Applied "${s.title}". Review the preview, then press Rename.`); if (isCompact()) setPane('preview'); }, { cls: 'btn-sm btn-primary' }),
         btn('Add to my rules', () => { S.rules.push(...clone()); renderRules(); changed(); }, { cls: 'btn-sm' }))));
@@ -682,57 +705,127 @@ function renderAnalyser() {
 }
 
 /* ------------------------------------------------------------------ execute */
+const nf = (n) => Number(n).toLocaleString('en-US');
+const busyToast = () => toast('A rename or tag save is still running on this folder. It keeps going in the background; try again when it has finished.', { type: 'warn', timeout: 7000 });
+
 async function runRename() {
-  if (!S.plan || !S.plan.ops.length || S.busy) return;
+  if (!S.plan || !S.plan.ops.length) return;
   const root = S.root;
-  const { stats, ops } = S.plan;
+  if (activeFor(root) || await conflictFor(root)) { busyToast(); return; }
+  // Freeze the plan now: the person may change rules, open another folder or leave this screen while it runs.
+  const { stats } = S.plan;
+  const ops = S.plan.ops.map(({ kind, from, to }) => ({ kind, from, to }));
   const inPlace = root.kind === 'dir';
-  const ok = await confirmDialog(S.mode === 'ext' ? 'Change extensions?' : 'Rename files?', h('div', null,
-    h('p', null, `${stats.changed.toLocaleString('en-US')} item${stats.changed === 1 ? '' : 's'} will be renamed ${inPlace ? `directly in "${root.name}"` : 'and you will get a new ZIP'}.`),
-    h('p', { class: 'muted' }, 'An undo file is written first, so you can put every name back with Restore, even from another computer.'),
+  const extMode = S.mode === 'ext';
+  const ok = await confirmDialog(extMode ? 'Change extensions?' : 'Rename files?', h('div', null,
+    h('p', null, `${nf(stats.changed)} item${stats.changed === 1 ? '' : 's'} will be renamed ${inPlace ? `directly in "${root.name}"` : 'and you will get a new ZIP'}.`),
+    h('p', { class: 'muted' }, 'It runs in the background, so you can switch screens or apps while it works. An undo file is written first, so you can put every name back with Restore, even from another computer.'),
     stats.invalid || stats.conflict ? h('p', { class: 'warn' }, `${stats.invalid + stats.conflict} item(s) will be skipped.`) : null), { okText: 'Rename' });
   if (!ok) return;
   if (inPlace && !(await root.verifyPermission(true))) { toast('Permission was not granted.', { type: 'error' }); return; }
+  if (activeFor(root)) { busyToast(); return; } // a second click while the dialog was open
   root.allowCopyFallback = S.opts.copyFallback;
-  S.busy = true; paintBar();
-  const extMode = S.mode === 'ext';
   const manifest = createRenameManifest({
     root: root.name, source: root.kind, ops, stats, tool: extMode ? 'extension' : 'renamer',
-    rules: extMode ? [{ type: 'extensions', opts: JSON.parse(JSON.stringify(S.ext)) }] : S.rules.filter((r) => r.enabled).map(({ type, opts }) => ({ type, opts })),
+    rules: extMode ? [{ type: 'extensions', opts: JSON.parse(JSON.stringify(S.ext)) }] : S.rules.filter((r) => r.enabled).map(({ type, opts }) => ({ type, opts: JSON.parse(JSON.stringify(opts)) })),
   });
   const mName = manifestFileName('rename');
   let wroteManifest = false;
   try { await root.writeText(mName, JSON.stringify(manifest, null, 2)); wroteManifest = true; } catch (e) {
     const go = await confirmDialog('Could not write the undo file', `${e.message}. Continue anyway? The undo data will still be kept in History and offered as a download.`, { okText: 'Continue' });
-    if (!go) { S.busy = false; paintBar(); return; }
+    if (!go) return;
   }
-  const p = progress('Renaming');
-  const ctl = new AbortController();
-  const timer = setInterval(() => { if (p.cancelled) ctl.abort(); }, 100);
-  const res = await executeOps(root, ops, { signal: ctl.signal, onStep: (i, op) => p.set(i, ops.length, basename(op.to)) });
-  clearInterval(timer);
-  manifest.operations = res.done.map((o) => ({ kind: o.kind, from: o.from, to: o.to }));
-  manifest.status = res.error ? 'partial' : 'complete';
-  manifest.completed = res.done.length;
-  manifest.planned = ops.length;
-  if (res.error) manifest.error = res.error.message;
-  const text = JSON.stringify(manifest, null, 2);
-  if (wroteManifest) { try { await root.writeText(mName, text); } catch { /* ignore */ } }
-  else download(new Blob([text], { type: 'application/json' }), mName);
-  await addHistory({ id: manifest.id, type: 'rename', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: manifest.status });
-  let fin = { message: '' };
-  if (!inPlace) {
-    p.set(0, 100, 'Building ZIP…');
-    try { fin = await root.finalize({ onProgress: (pc) => p.set(Math.round(pc), 100, 'Building ZIP…'), download }); } catch (e) { toast(`ZIP failed: ${e.message}`, { type: 'error' }); }
-  }
-  p.close();
-  S.busy = false;
+  await addHistory({ id: manifest.id, type: 'rename', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: 'in-progress' });
   S.excluded.clear();
-  if (res.error) toast(`Stopped after ${res.done.length} of ${ops.length}: ${res.error.message}. The undo file covers what was done.`, { type: 'error', timeout: 12000 });
-  else toast(`Renamed ${res.done.length.toLocaleString('en-US')} item${res.done.length === 1 ? '' : 's'}. ${fin.message || ''}`, {
-    type: 'success', timeout: 10000, action: res.done.length ? { label: 'Undo', onClick: () => undoNow(root, manifest, mName) } : null,
-  });
-  await scan();
+  startRenameJob({ root, manifest, mName, ops, prior: [], wroteManifest, title: `${extMode ? 'Changing extensions' : 'Renaming'}: ${nf(ops.length)} step${ops.length === 1 ? '' : 's'} in "${root.name}"` });
+  paintBar();
+}
+
+/**
+ * Run (or finish) the renames of one undo file as a background job.
+ * `ops` are executed in parallel where that cannot change the outcome (see opDependencies in planner.js);
+ * `prior` are operations an earlier, interrupted run already did.
+ */
+function startRenameJob({ root, manifest, mName, ops, prior, wroteManifest, title }) {
+  const inPlace = root.kind === 'dir';
+  const total = prior.length + ops.length;
+  const job = startJob({ id: manifest.id, kind: 'rename', title, root, total, run: async (ctx) => {
+    ctx.set(prior.length, total, 'Starting…');
+    // Checkpoint: the undo file always lists the whole plan plus which steps are finished, so if the app is
+    // killed, Undo reverses exactly what was done and Resume does the rest.
+    manifest.operations = [...prior, ...ops];
+    manifest.status = 'in-progress';
+    const live = new Set(prior.map((_, i) => i));
+    let saving = false; let lastSaved = -1;
+    const checkpoint = async () => {
+      if (!wroteManifest || !inPlace || saving || live.size === lastSaved) return;
+      saving = true; lastSaved = live.size;
+      try { await root.writeText(mName, JSON.stringify({ ...manifest, doneIdx: [...live] })); } catch { /* the final write will report problems */ }
+      saving = false;
+    };
+    const timer = setInterval(checkpoint, Math.max(2000, Math.min(15000, ops.length * 0.2)));
+    const res = await executeOpsParallel(root, ops, {
+      concurrency: root.maxConcurrency, signal: ctx.signal,
+      onStep: (count, op, idx) => { live.add(prior.length + idx); ctx.set(prior.length + count, total, basename(op.to)); },
+    });
+    clearInterval(timer);
+    while (saving) await tick();
+    const doneAll = [...prior, ...res.done];
+    manifest.operations = doneAll.map((o) => ({ kind: o.kind, from: o.from, to: o.to }));
+    delete manifest.doneIdx; delete manifest.interrupted;
+    manifest.status = res.error ? 'partial' : 'complete';
+    manifest.completed = doneAll.length;
+    manifest.planned = total;
+    const doneSet = new Set(res.doneIdx);
+    const left = ops.filter((_, i) => !doneSet.has(i)).map(({ kind, from, to }) => ({ kind, from, to }));
+    if (left.length) manifest.remaining = left; else delete manifest.remaining;
+    if (res.error) manifest.error = res.error.message; else delete manifest.error;
+    const text = JSON.stringify(manifest, null, 2);
+    if (wroteManifest) { try { await root.writeText(mName, text); } catch { /* ignore */ } }
+    else download(new Blob([text], { type: 'application/json' }), mName);
+    await updateHistory(manifest.id, { manifest, status: manifest.status });
+    let fin = { message: '' };
+    if (!inPlace) {
+      try { fin = await root.finalize({ onProgress: (pc) => ctx.set(total, total, `Building ZIP… ${Math.round(pc)}%`), download }); } catch (e) { fin = { message: `ZIP failed: ${e.message}` }; }
+    }
+    const actions = [];
+    if (doneAll.length) actions.push({ label: 'Undo', onClick: () => undoNow(root, manifest, mName) });
+    if (left.length && inPlace && !res.error) actions.push({ label: `Resume (${nf(left.length)} left)`, onClick: () => resumeRename(root, manifest, mName) });
+    const cancelled = res.error?.message === 'Cancelled';
+    if (res.error) {
+      return { status: 'partial', actions, details: [res.error.message],
+        message: cancelled ? `Stopped: ${nf(doneAll.length)} of ${nf(total)} done. The undo file covers what was done.` : `Stopped after ${nf(doneAll.length)} of ${nf(total)}. The undo file covers what was done.` };
+    }
+    return { status: 'done', actions, message: `Done: ${nf(doneAll.length)} step${doneAll.length === 1 ? '' : 's'}. ${fin.message || ''}`.trim() };
+  } });
+  job.promise.then(() => { if (S.root === root && !activeFor(root)) scan(); else paintBar(); });
+  return job;
+}
+
+/** Finish an interrupted or stopped rename: only the steps that are still possible are run. */
+export async function resumeRename(root, manifest, mName) {
+  normaliseInterrupted(manifest);
+  const remaining = manifest.remaining || [];
+  if (!remaining.length) { toast('Nothing is left to do for this undo file.'); return; }
+  if (activeFor(root) || await conflictFor(root)) { busyToast(); return; }
+  S.mode = 'rename';
+  await setRoot(root, { keepMode: true });
+  if (root.kind === 'dir' && !(await root.verifyPermission(true))) { toast('Permission was not granted.', { type: 'error' }); return; }
+  const present = (await root.list({ recursive: true, includeHidden: true, includeTemp: true, withFiles: false })).map((e) => e.path);
+  const sim = simulateOps(present, remaining);
+  const todo = sim.results.filter((r) => r.status === 'ok').map(({ kind, from, to }) => ({ kind, from, to }));
+  if (!todo.length) { toast('None of the remaining steps can run any more: the files were moved or renamed since.', { type: 'warn', timeout: 9000 }); return; }
+  const skipped = remaining.length - todo.length;
+  const go = await confirmDialog('Resume this rename?', h('div', null,
+    h('p', null, `${nf(todo.length)} step${todo.length === 1 ? '' : 's'} left to run in "${root.name}".`),
+    skipped ? h('p', { class: 'warn' }, `${nf(skipped)} other step${skipped === 1 ? ' is' : 's are'} no longer possible (a file was moved, renamed or already exists) and will be skipped.`) : null), { okText: 'Resume' });
+  if (!go) return;
+  root.allowCopyFallback = S.opts.copyFallback;
+  let wroteManifest = true;
+  try { await root.writeText(mName, JSON.stringify({ ...manifest, status: 'in-progress', operations: [...manifest.operations, ...todo], doneIdx: manifest.operations.map((_, i) => i) })); } catch { wroteManifest = false; }
+  await addHistory({ id: manifest.id, type: 'rename', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: 'in-progress' });
+  startRenameJob({ root, manifest, mName, ops: todo, prior: manifest.operations, wroteManifest, title: `Resuming: ${nf(todo.length)} step${todo.length === 1 ? '' : 's'} in "${root.name}"` });
+  paintBar();
 }
 
 async function undoNow(root, manifest, mName) {
@@ -846,29 +939,38 @@ function paintRestore() {
     h('ul', { class: 'restore-list mono' }, sim.results.filter((r) => !basename(r.from).startsWith('.nametag-tmp-') || r.status !== 'ok').slice(0, 400).map((r) => h('li', { class: `st-${r.status}` },
       h('span', { class: 'ex-old' }, r.from), h('span', { class: 'ex-new' }, r.to), h('span', { class: 'pill' }, { ok: 'ready', missing: 'missing', conflict: 'blocked' }[r.status])))),
     sim.results.length > 400 ? h('p', { class: 'muted' }, `…and ${sim.results.length - 400} more.`) : null,
-    h('div', { class: 'btn-row' }, btn(`Restore ${sim.ok} name${sim.ok === 1 ? '' : 's'}`, () => runRestore(), { cls: 'btn-primary', ic: 'rotate-ccw', disabled: !sim.ok || S.busy })),
+    m.remaining?.length ? h('p', { class: 'f-warn' }, icon('triangle-alert'), h('span', null, `This run did not finish: ${nf(m.remaining.length)} step${m.remaining.length === 1 ? ' was' : 's were'} never done.`)) : null,
+    h('div', { class: 'btn-row' },
+      btn(`Restore ${sim.ok} name${sim.ok === 1 ? '' : 's'}`, () => runRestore(), { cls: 'btn-primary', ic: 'rotate-ccw', disabled: !sim.ok || !!activeFor(S.root) }),
+      m.remaining?.length && S.root?.kind === 'dir' ? btn('Finish the rest instead', () => resumeRename(S.root, m, R.name || R.fileName), { ic: 'play', disabled: !!activeFor(S.root) }) : null),
   );
 }
 
 async function runRestore() {
   const { manifest, sim, name, remap } = S.restore;
   const root = S.root;
-  if (!isIdentity(remap)) manifest.lastRemap = { strip: remap.strip, prefix: remap.prefix, dirs: remap.byName ? remap.dirs : [], appliedTo: root.name };
+  if (activeFor(root) || await conflictFor(root)) { busyToast(); return; }
+  const external = S.restore.external;
   const ops = sim.results.filter((r) => r.status === 'ok').map(({ kind, from, to }) => ({ kind, from, to }));
-  if (!(await confirmDialog('Restore original names?', `${ops.length} item(s) will get their previous names back.`, { okText: 'Restore' }))) return;
+  if (!(await confirmDialog('Restore original names?', `${nf(ops.length)} item(s) will get their previous names back. This runs in the background.`, { okText: 'Restore' }))) return;
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) return;
+  if (!isIdentity(remap)) manifest.lastRemap = { strip: remap.strip, prefix: remap.prefix, dirs: remap.byName ? remap.dirs : [], appliedTo: root.name };
   root.allowCopyFallback = S.opts.copyFallback;
-  S.busy = true;
-  const p = progress('Restoring');
-  const res = await executeOps(root, ops, { onStep: (i, op) => p.set(i, ops.length, basename(op.to)) });
-  manifest.restoredAt = new Date().toISOString();
-  manifest.restoreStatus = res.error ? 'partial' : 'complete';
-  if (name && !S.restore.external) { try { await root.writeText(name, JSON.stringify(manifest, null, 2)); } catch { /* ignore */ } }
-  await updateHistory(manifest.id, { manifest, status: res.error ? 'restore-partial' : 'restored' });
-  if (root.kind !== 'dir') { try { await root.finalize({ onProgress: (pc) => p.set(Math.round(pc), 100, 'Building ZIP…'), download }); } catch (e) { toast(e.message, { type: 'error' }); } }
-  p.close();
-  S.busy = false;
-  toast(res.error ? `Restore stopped: ${res.error.message}` : `Restored ${res.done.length} name${res.done.length === 1 ? '' : 's'}.`, { type: res.error ? 'error' : 'success' });
-  S.restore = null;
-  await scan();
+  const total = ops.length;
+  startJob({ id: `restore-${manifest.id}-${Date.now()}`, kind: 'restore', title: `Restoring ${nf(total)} name${total === 1 ? '' : 's'} in "${root.name}"`, root, total, run: async (ctx) => {
+    const res = await executeOpsParallel(root, ops, {
+      concurrency: root.maxConcurrency, signal: ctx.signal,
+      onStep: (count, op) => ctx.set(count, total, basename(op.to)),
+    });
+    manifest.restoredAt = new Date().toISOString();
+    manifest.restoreStatus = res.error ? 'partial' : 'complete';
+    if (name && !external) { try { await root.writeText(name, JSON.stringify(manifest, null, 2)); } catch { /* ignore */ } }
+    await updateHistory(manifest.id, { manifest, status: res.error ? 'restore-partial' : 'restored' });
+    if (root.kind !== 'dir') { try { await root.finalize({ onProgress: (pc) => ctx.set(total, total, `Building ZIP… ${Math.round(pc)}%`), download }); } catch (e) { res.error = res.error || e; } }
+    return res.error
+      ? { status: 'partial', message: `Restore stopped after ${nf(res.done.length)} of ${nf(total)}: ${res.error.message}`, details: [res.error.message] }
+      : { status: 'done', message: `Restored ${nf(res.done.length)} name${res.done.length === 1 ? '' : 's'}.` };
+  } }).promise.then(() => { if (S.root === root && !activeFor(root)) { S.restore = null; scan(); } else paintBar(); });
+  paintBar();
+  paintRestore();
 }

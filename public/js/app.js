@@ -4,6 +4,9 @@ import { formatDate } from './core/utils.js';
 import { DirRoot, SafRoot, support } from './core/sources.js';
 import { summarizeManifest } from './core/manifest.js';
 import { listHistory, deleteHistory, clearHistory } from './core/history.js';
+import { mountJobTray } from './core/jobs-ui.js';
+import { hasRunning, isRunning, whenIdle, onJobs } from './core/jobs.js';
+import { parseManifest } from './core/manifest.js';
 import * as renamer from './renamer/renamer-ui.js';
 import * as tagger from './tagger/tagger-ui.js';
 import { AUDIO_EXT } from './tagger/index.js';
@@ -51,7 +54,8 @@ function initSW() {
   // The Android app ships every file inside the APK, so no offline cache is needed (and it could serve stale files after an update).
   if (isNativeApp()) { navigator.serviceWorker.getRegistrations?.().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {}); return; }
   let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+  // A new version takes over: reload, but never in the middle of a rename or tag save.
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading) return; reloading = true; whenIdle().then(() => location.reload()); });
   navigator.serviceWorker.register('sw.js').then((reg) => {
     const offer = (w) => toast('A new version of NameTag is ready.', { timeout: 0, action: { label: 'Update', onClick: () => w.postMessage({ type: 'SKIP_WAITING' }) } });
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
@@ -123,7 +127,9 @@ async function renderHistory() {
   const ul = h('ul', { class: 'history-list' });
   for (const rec of list) {
     const m = rec.manifest;
-    const status = { complete: 'Done', partial: 'Partly done', restored: 'Restored', 'restore-partial': 'Partly restored', 'in-progress': 'Interrupted' }[rec.status] || rec.status;
+    const live = isRunning(rec.id);
+    const status = live ? 'Running now' : { complete: 'Done', partial: 'Partly done', restored: 'Restored', 'restore-partial': 'Partly restored', 'in-progress': 'Interrupted' }[rec.status] || rec.status;
+    const canResume = !live && rec.type === 'rename' && rec.source === 'dir' && rec.handle && ['in-progress', 'partial'].includes(rec.status);
     ul.append(h('li', { class: 'history-item' },
       h('div', { class: 'hi-icon', 'aria-hidden': 'true' }, icon(rec.type === 'tags' ? 'tag' : 'text-cursor-input')),
       h('div', { class: 'hi-main' },
@@ -131,11 +137,26 @@ async function renderHistory() {
         h('p', { class: 'muted' }, `${formatDate(new Date(rec.createdAt), 'D MMM YYYY, HH:mm')}. ${summarizeManifest(m)}. `, h('span', { class: `pill ${/restor/.test(rec.status) ? '' : 'pill-accent'}` }, status)),
         h('p', { class: 'mono small muted' }, rec.manifestName)),
       h('div', { class: 'btn-row' },
-        btn('Restore', () => restoreFromHistory(rec), { cls: 'btn-sm', ic: 'rotate-ccw' }),
+        canResume ? btn('Resume', () => resumeFromHistory(rec), { cls: 'btn-sm btn-primary', ic: 'play' }) : null,
+        btn('Restore', () => restoreFromHistory(rec), { cls: 'btn-sm', ic: 'rotate-ccw', disabled: live }),
         btn('', () => download(new Blob([JSON.stringify(m, null, 2)], { type: 'application/json' }), rec.manifestName), { cls: 'btn-icon', ic: 'download', title: 'Download undo file' }),
         btn('', async () => { if (await confirmDialog('Remove this entry?', 'Only the history entry is removed.', { okText: 'Remove' })) { await deleteHistory(rec.id); renderHistory(); } }, { cls: 'btn-icon', ic: 'trash-2', title: 'Remove entry' }))));
   }
   el.append(ul);
+}
+
+/** Re-open the folder and finish a rename that was interrupted (app closed, phone locked, error). */
+async function resumeFromHistory(rec) {
+  try {
+    const root = rec.handle.saf ? new SafRoot(rec.handle) : new DirRoot(rec.handle);
+    if (!(await root.verifyPermission(true))) { toast('Permission was not granted for that folder.', { type: 'warn' }); return; }
+    await root.list({ recursive: true, includeHidden: true, includeTemp: true, withFiles: false }); // finds the undo files inside
+    const f = root.manifests.find((m) => m.name === rec.manifestName);
+    // The undo file inside the folder has the latest checkpoint; History only has the plan from the start.
+    const manifest = f ? parseManifest(await (await f.getFile()).text()) : parseManifest(JSON.stringify(rec.manifest));
+    go('renamer');
+    await renamer.resumeRename(root, manifest, rec.manifestName);
+  } catch (e) { toast(`Could not resume: ${e.message}`, { type: 'error' }); }
 }
 
 async function restoreFromHistory(rec) {
@@ -158,6 +179,9 @@ async function restoreFromHistory(rec) {
 /* ------------------------------------------------------------------ boot */
 function boot() {
   initTheme();
+  mountJobTray($('#jobs'));
+  let sig = '';
+  onJobs((list) => { const now = list.map((j) => `${j.id}:${j.status}`).join(); if (now !== sig) { sig = now; if (current === 'history') renderHistory(); } });
   renamer.mountRenamer($('#view-renamer'));
   tagger.mountTagger($('#view-tagger'), { onSendToRenamer: (root, rules) => { go('renamer'); renamer.openWithRules(root, rules); } });
   window.addEventListener('hashchange', route);
@@ -165,7 +189,7 @@ function boot() {
   initDrop();
   initSW();
   initInstall();
-  window.addEventListener('beforeunload', (e) => { if (tagger.hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (tagger.hasUnsaved() || hasRunning()) { e.preventDefault(); e.returnValue = ''; } });
   if (isNativeApp()) document.documentElement.classList.add('is-native-app');
   window.__nametag = { renamer, tagger, support, go };
 }

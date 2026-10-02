@@ -38,6 +38,9 @@ edit('src/main/AndroidManifest.xml', (s) => {
   let x = s;
   if (!x.includes('WRITE_EXTERNAL_STORAGE')) x = need(x, '<uses-permission android:name="android.permission.INTERNET" />',
     '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+  if (!x.includes('FOREGROUND_SERVICE')) x = need(x, '<uses-permission android:name="android.permission.INTERNET" />',
+    '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
+  if (!x.includes('KeepAliveService')) x = need(x, '</application>', '    <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync" />\n    </application>');
   if (!x.includes('requestLegacyExternalStorage')) x = need(x, 'android:supportsRtl="true"', 'android:supportsRtl="true"\n        android:requestLegacyExternalStorage="true"');
   return x;
 });
@@ -69,7 +72,7 @@ edit('build.gradle', (s) => {
 // 5. Native folder access (Storage Access Framework): the NameTagFolders plugin, registered in MainActivity.
 const javaDir = join(app, 'src/main/java', ...cfg.appId.split('.'));
 mkdirSync(javaDir, { recursive: true });
-for (const f of ['FoldersPlugin.java', 'MainActivity.java']) {
+for (const f of ['FoldersPlugin.java', 'KeepAliveService.java', 'MainActivity.java']) {
   const src = readFileSync(join(root, 'scripts/android/java', f), 'utf8').replace(/^package [\w.]+;/m, `package ${cfg.appId};`);
   writeFileSync(join(javaDir, f), src);
 }

@@ -164,9 +164,9 @@ export const tick = () => new Promise((r) => setTimeout(r, 0));
 let openMenuEl = null;
 export function closeMenu() { if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; } }
 
-export function menu(anchor, items, { align = 'start' } = {}) {
+export function menu(anchor, items, { align = 'start', cls = '' } = {}) {
   closeMenu();
-  const m = h('div', { class: 'menu', role: 'menu' });
+  const m = h('div', { class: `menu ${cls}`.trim(), role: 'menu' });
   for (const it of items) {
     if (!it) continue;
     if (it.separator) { m.append(h('div', { class: 'menu-sep', role: 'separator' })); continue; }

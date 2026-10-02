@@ -4,10 +4,10 @@ const CACHE = `nametag-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/theme-init.js', 'js/app.js',
-  'js/core/utils.js', 'js/core/ui.js', 'js/core/sources.js', 'js/core/remap.js', 'js/core/remap-ui.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
+  'js/core/utils.js', 'js/core/ui.js', 'js/core/jobs.js', 'js/core/jobs-ui.js', 'js/core/sources.js', 'js/core/remap.js', 'js/core/remap-ui.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
   'js/renamer/rules.js', 'js/renamer/analyzer.js', 'js/renamer/presets.js', 'js/renamer/extensions.js', 'js/renamer/renamer-ui.js',
   'js/tagger/bytes.js', 'js/tagger/model.js', 'js/tagger/id3.js', 'js/tagger/mpeg.js', 'js/tagger/flac.js', 'js/tagger/vorbis.js',
-  'js/tagger/ogg.js', 'js/tagger/mp4.js', 'js/tagger/riff.js', 'js/tagger/index.js', 'js/tagger/tools.js', 'js/tagger/online.js', 'js/tagger/tagger-ui.js',
+  'js/tagger/ogg.js', 'js/tagger/mp4.js', 'js/tagger/riff.js', 'js/tagger/index.js', 'js/tagger/tools.js', 'js/tagger/pool.js', 'js/tagger/worker.js', 'js/tagger/online.js', 'js/tagger/tagger-ui.js',
   'vendor/jszip.min.js',
   'fonts/next-latin-400.woff2', 'fonts/next-latin-600.woff2', 'fonts/next-latin-800.woff2',
   'fonts/next-latin-ext-400.woff2', 'fonts/next-latin-ext-600.woff2', 'fonts/next-latin-ext-800.woff2',

@@ -96,10 +96,12 @@ const DUP_MARKERS = [/\s*\(\d+\)$/, /\s*-\s*copy(?:\s*\(\d+\))?$/i, /^copy of\s+
 const DATE_RE = /(?<!\d)(?:(19|20)\d{2}[-_. ]?(0[1-9]|1[0-2])[-_. ]?(0[1-9]|[12]\d|3[01])(?:[-_ T.]?([01]\d|2[0-3])[-_.:]?([0-5]\d)(?:[-_.:]?([0-5]\d))?)?|(0?[1-9]|[12]\d|3[01])[-_.](0?[1-9]|1[0-2])[-_.](19|20)\d{2})(?!\d)/g;
 
 /* ------------------------------------------------------------------ rules */
+export const RULE_GROUPS = [['clean', 'Clean up'], ['edit', 'Edit text'], ['build', 'Build new names'], ['advanced', 'Advanced']];
+
 export const RULES = {
   cleanup: {
-    label: 'Clean up', icon: 'sparkles',
-    desc: 'Normalise separators, remove junk and fix spacing.',
+    label: 'Tidy up names', icon: 'sparkles', group: 'clean',
+    desc: 'Turn _ and %20 into spaces, drop junk like "(1)" or "- Copy", fix spacing and invalid characters.',
     fields: [
       { key: 'underscores', type: 'bool', label: 'Underscores to spaces', default: true },
       { key: 'dots', type: 'bool', label: 'Dots to spaces (keeps 1.5, 2.0)', default: false },
@@ -145,7 +147,7 @@ export const RULES = {
   },
 
   replace: {
-    label: 'Find & replace', icon: 'replace',
+    label: 'Find and replace', icon: 'replace', group: 'edit',
     desc: 'Replace text or a regular expression. Use $1, $2 for regex groups; replacement supports {variables}.',
     fields: [
       { key: 'find', type: 'text', label: 'Find', default: '' },
@@ -175,8 +177,8 @@ export const RULES = {
   },
 
   replaceList: {
-    label: 'Replace list', icon: 'list',
-    desc: 'Many replacements at once, one per line: old => new',
+    label: 'Replace many at once', icon: 'list', group: 'edit',
+    desc: 'Several find-and-replace pairs in one rule, one per line: old => new.',
     fields: [
       { key: 'pairs', type: 'textarea', label: 'Pairs (one per line)', default: '', placeholder: 'feat. => ft.\n& => and' },
       { key: 'matchCase', type: 'bool', label: 'Match case', default: false },
@@ -193,8 +195,8 @@ export const RULES = {
   },
 
   remove: {
-    label: 'Remove', icon: 'scissors',
-    desc: 'Remove characters by position, text, type or marker.',
+    label: 'Remove characters', icon: 'scissors', group: 'edit',
+    desc: 'Cut characters by position, specific text, digits, symbols, or everything before/after a marker.',
     fields: [
       { key: 'mode', type: 'select', label: 'Remove', options: [['first', 'First N characters'], ['last', 'Last N characters'], ['range', 'Characters from … to …'], ['text', 'Specific words/text (comma separated)'], ['chars', 'Specific characters'], ['digits', 'Digits'], ['before', 'Everything before marker'], ['after', 'Everything after marker'], ['nonalnum', 'All non letters/digits (keeps spaces)'], ['spaces', 'All spaces']], default: 'first' },
       { key: 'n', type: 'number', label: 'N', default: 1, min: 0, show: (o) => ['first', 'last'].includes(o.mode) },
@@ -232,8 +234,8 @@ export const RULES = {
   },
 
   case: {
-    label: 'Change case', icon: 'type',
-    desc: 'Title Case keeps small words and acronyms sensible.',
+    label: 'Change letter case', icon: 'type', group: 'clean',
+    desc: 'Title Case, Sentence case, lower, UPPER, camelCase, snake_case and more. Smart Title Case keeps small words and acronyms right.',
     fields: [
       { key: 'mode', type: 'select', label: 'Case', options: [['title', 'Title Case (smart)'], ['titleAll', 'Title Case (every word)'], ['sentence', 'Sentence case'], ['lower', 'lowercase'], ['upper', 'UPPERCASE'], ['capitalize', 'Capitalize first letters only'], ['invert', 'iNVERT cASE'], ['camel', 'camelCase'], ['pascal', 'PascalCase'], ['snake', 'snake_case'], ['kebab', 'kebab-case'], ['constant', 'CONSTANT_CASE'], ['dot', 'dot.case']], default: 'title' },
       { key: 'exceptions', type: 'text', label: 'Always write these words exactly (comma separated)', default: 'DJ, feat., ft., vs., MTV, USA, UK, OK, TV', show: (o) => o.mode?.startsWith('title') || o.mode === 'sentence' },
@@ -249,8 +251,8 @@ export const RULES = {
   },
 
   add: {
-    label: 'Add text', icon: 'plus',
-    desc: 'Prefix, suffix or insert at a position. Supports {variables}.',
+    label: 'Add text', icon: 'plus', group: 'build',
+    desc: 'Add text before or after the name, or insert it at a position. Supports {variables}.',
     fields: [
       { key: 'prefix', type: 'text', label: 'Prefix', default: '' },
       { key: 'suffix', type: 'text', label: 'Suffix', default: '' },
@@ -271,8 +273,8 @@ export const RULES = {
   },
 
   number: {
-    label: 'Numbering', icon: 'list-ordered',
-    desc: 'Sequential numbers with padding, step, styles and per-folder counters.',
+    label: 'Add numbers', icon: 'list-ordered', group: 'build',
+    desc: 'Number items 1, 2, 3 (or 01, a, I…) before, after or instead of the name. Can restart in each folder.',
     fields: [
       { key: 'position', type: 'select', label: 'Position', options: [['prefix', 'Before name'], ['suffix', 'After name'], ['insert', 'At position'], ['replace', 'Replace whole name']], default: 'prefix' },
       { key: 'at', type: 'number', label: 'Position', default: 0, min: 0, show: (o) => o.position === 'insert' },
@@ -323,8 +325,8 @@ export const RULES = {
   },
 
   template: {
-    label: 'Template', icon: 'code',
-    desc: 'Build the whole name from variables, e.g. {track:2} - {title} or {parent} {n:3}.',
+    label: 'Build from template', icon: 'code', group: 'build',
+    desc: 'Write the whole new name from variables, e.g. {track:2} - {title} or {parent} {n:3}.',
     fields: [
       { key: 'tpl', type: 'template', label: 'New name (without extension)', default: '{name}' },
       { key: 'onlyIfTags', type: 'bool', label: 'Skip files where the template resolves to empty', default: true },
@@ -338,8 +340,8 @@ export const RULES = {
   },
 
   extension: {
-    label: 'Extension', icon: 'file-text',
-    desc: 'Change case, replace, remove or fix extensions; detect the real type from file contents.',
+    label: 'Change extension', icon: 'file-text', group: 'build',
+    desc: 'Lower/upper case, replace, remove or fix extensions, or detect the real type from the file contents.',
     fields: [
       { key: 'mode', type: 'select', label: 'Action', options: [['lower', 'lowercase'], ['upper', 'UPPERCASE'], ['replace', 'Replace with'], ['remove', 'Remove'], ['add', 'Add extension'], ['fixDouble', 'Fix double extensions (a.jpg.jpg)'], ['normalize', 'Normalise (jpeg→jpg, tif→tiff, htm→html)'], ['detect', 'Detect from file contents']], default: 'lower' },
       { key: 'value', type: 'text', label: 'Extension', default: '', show: (o) => ['replace', 'add'].includes(o.mode) },
@@ -366,7 +368,7 @@ export const RULES = {
   },
 
   swap: {
-    label: 'Swap parts', icon: 'arrow-left-right',
+    label: 'Swap parts', icon: 'arrow-left-right', group: 'edit',
     desc: 'Split the name at a separator and reorder the parts, e.g. "Title - Artist" → "Artist - Title".',
     fields: [
       { key: 'sep', type: 'text', label: 'Separator', default: ' - ' },
@@ -387,8 +389,8 @@ export const RULES = {
   },
 
   trim: {
-    label: 'Keep part', icon: 'text-cursor-input',
-    desc: 'Keep only the text before/after/between markers, or limit the length.',
+    label: 'Keep only part', icon: 'text-cursor-input', group: 'edit',
+    desc: 'Keep just the text before, after or between markers, or cut names to a maximum length.',
     fields: [
       { key: 'mode', type: 'select', label: 'Keep', options: [['before', 'Text before marker'], ['after', 'Text after marker'], ['between', 'Text between two markers'], ['max', 'First N characters (max length)']], default: 'before' },
       { key: 'marker', type: 'text', label: 'Marker', default: ' - ', show: (o) => o.mode !== 'max' },
@@ -414,8 +416,8 @@ export const RULES = {
   },
 
   strip: {
-    label: 'Clear existing pattern', icon: 'brackets',
-    desc: 'Remove existing numbering, dates, common prefixes/suffixes and release tags before re-patterning.',
+    label: 'Strip numbers and tags', icon: 'brackets', group: 'clean',
+    desc: 'Remove old track numbers, dates, shared prefixes/suffixes, quality tags (1080p, 320kbps) and URLs.',
     fields: [
       { key: 'leading', type: 'bool', label: 'Leading track/sequence numbers (01, 1., CD1-02, Track 3)', default: true },
       { key: 'trailing', type: 'bool', label: 'Trailing numbers (name 001, name_2)', default: false },
@@ -450,8 +452,8 @@ export const RULES = {
   },
 
   date: {
-    label: 'Date', icon: 'calendar',
-    desc: 'Insert the modified date or today, or rewrite dates found in names into one format.',
+    label: 'Add or reformat date', icon: 'calendar', group: 'build',
+    desc: 'Insert the modified date or today, or rewrite dates already in names into one format.',
     fields: [
       { key: 'mode', type: 'select', label: 'Action', options: [['mdate', 'Insert file modified date'], ['now', 'Insert current date'], ['reformat', 'Reformat dates found in the name']], default: 'mdate' },
       { key: 'fmt', type: 'text', label: 'Format (YYYY MM DD HH mm ss, [literal])', default: 'YYYY-MM-DD' },
@@ -474,7 +476,7 @@ export const RULES = {
   },
 
   list: {
-    label: 'Names from list', icon: 'list',
+    label: 'Rename from a list', icon: 'clipboard-paste', group: 'advanced',
     desc: 'Paste new names, one per line, applied in the listed order (e.g. from a spreadsheet).',
     fields: [
       { key: 'names', type: 'textarea', label: 'New names (one per line)', default: '' },
@@ -490,7 +492,7 @@ export const RULES = {
   },
 
   script: {
-    label: 'Custom script', icon: 'zap',
+    label: 'Custom script (JavaScript)', icon: 'zap', group: 'advanced',
     desc: 'JavaScript: return the new name. Variables: name, ext, index, dirIndex, total, path, parent, mtime, size, tags, isDir.',
     fields: [{ key: 'code', type: 'code', label: 'Function body', default: "return name.replace(/\\s+/g, ' ');" }],
     validate(o) { try { new Function('name', 'ext', 'index', 'dirIndex', 'total', 'path', 'parent', 'mtime', 'size', 'tags', 'isDir', o.code || ''); } catch (e) { return `Script error: ${e.message}`; } return null; },

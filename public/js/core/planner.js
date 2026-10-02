@@ -137,26 +137,113 @@ export function orderOps(rows, byDir, { caseSensitive = false, tmpSeed } = {}) {
 }
 const depth = (p) => (p ? p.split('/').length : 0);
 
+const yieldToUI = () => new Promise((r) => setTimeout(r, 0));
+
+/** Check the target is free, then move. Shared by the sequential and the parallel executor. */
+async function runOp(root, op) {
+  const ex = await root.exists(op.to);
+  if (ex === true) throw new Error(`Target already exists: ${op.to}`);
+  await root.move(op.from, op.to);
+}
+const wrapError = (e, op) => Object.assign(new Error(`${e.message} (while renaming "${op.from}")`), { cause: e, op });
+
 /**
- * Execute ops sequentially with existence checks.
- * onStep(i, op) progress; returns {done: ops executed, error}
+ * Execute ops one after the other, in order, with existence checks.
+ * onStep(count, op, index) progress; returns {done: ops executed (in plan order), doneIdx, error}
  */
 export async function executeOps(root, ops, { onStep, signal } = {}) {
-  const done = [];
+  const done = []; const doneIdx = [];
   for (let i = 0; i < ops.length; i++) {
-    if (signal?.aborted) return { done, error: new Error('Cancelled') };
+    if (signal?.aborted) return { done, doneIdx, error: new Error('Cancelled') };
     const op = ops[i];
     try {
-      const ex = await root.exists(op.to);
-      if (ex === true) throw new Error(`Target already exists: ${op.to}`);
-      await root.move(op.from, op.to);
-      done.push(op);
-      onStep?.(i + 1, op);
+      await runOp(root, op);
+      done.push(op); doneIdx.push(i);
+      onStep?.(done.length, op, i);
     } catch (e) {
-      return { done, error: Object.assign(new Error(`${e.message} (while renaming "${op.from}")`), { cause: e, op }) };
+      return { done, doneIdx, error: wrapError(e, op) };
     }
+    if (i % 200 === 199) await yieldToUI(); // keep the page responsive on huge batches
   }
-  return { done, error: null };
+  return { done, doneIdx, error: null };
+}
+
+/**
+ * Work out which ops must wait for which. The planned order is only ONE valid order; many ops do not
+ * depend on each other, and running those at the same time cannot change the result. Op j waits for an
+ * earlier op i exactly when they touch the same path (swap chains, temp names, a target that another
+ * op frees up), or when one is a folder rename and the other works anywhere inside that folder
+ * (children must finish before their folder is renamed, and the other way round when restoring).
+ * Paths are compared case-insensitively, which is the safe choice on every file system.
+ * Returns deps[j] = indices j must wait for.
+ */
+export function opDependencies(ops) {
+  const exact = new Map();   // path -> last op that touched exactly this path
+  const inside = new Map();  // folder -> ops that touched something strictly inside it
+  const ancestors = (p) => { const out = []; let i; while ((i = p.lastIndexOf('/')) > 0) { p = p.slice(0, i); out.push(p); } return out; };
+  return ops.map((op, j) => {
+    const paths = [op.from.toLowerCase(), op.to.toLowerCase()];
+    const d = new Set();
+    for (const p of paths) {
+      if (exact.has(p)) d.add(exact.get(p));
+      for (const a of ancestors(p)) if (exact.has(a)) d.add(exact.get(a));
+      if (op.kind === 'dir' && inside.has(p)) for (const i of inside.get(p)) d.add(i);
+    }
+    for (const p of paths) {
+      exact.set(p, j);
+      for (const a of ancestors(p)) { let l = inside.get(a); if (!l) inside.set(a, l = []); l.push(j); }
+    }
+    d.delete(j);
+    return [...d];
+  });
+}
+
+/**
+ * Execute ops with several in flight at once, never starting an op before everything it depends on has
+ * finished, so the final names are exactly what the sequential run would produce.
+ * If one op fails nothing new is started; the ones already running finish, and the result lists
+ * exactly what was done (in plan order), so the undo file stays exact.
+ * Returns {done, doneIdx, error}.
+ */
+export async function executeOpsParallel(root, ops, { onStep, signal, concurrency = 4 } = {}) {
+  const n = ops.length;
+  const limit = Math.max(1, Math.min(concurrency | 0, 16));
+  if (limit === 1 || n < 2) return executeOps(root, ops, { onStep, signal });
+  const deps = opDependencies(ops);
+  const waiting = deps.map((d) => d.length);
+  const dependents = Array.from({ length: n }, () => []);
+  deps.forEach((d, j) => d.forEach((i) => dependents[i].push(j)));
+  // Ready ops start in plan order (smallest index first).
+  const heap = [];
+  const push = (v) => { heap.push(v); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p] <= heap[i]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0]; const last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { let m = i; const l = 2 * i + 1; const r = l + 1; if (l < heap.length && heap[l] < heap[m]) m = l; if (r < heap.length && heap[r] < heap[m]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  waiting.forEach((w, j) => { if (!w) push(j); });
+  const finished = new Set();
+  let failure = null; let running = 0; let sinceYield = 0;
+  return new Promise((resolve) => {
+    const finish = () => {
+      const doneIdx = [...finished].sort((a, b) => a - b);
+      const cancelled = !failure && doneIdx.length < n;
+      resolve({ done: doneIdx.map((i) => ops[i]), doneIdx, error: failure || (cancelled ? new Error('Cancelled') : null) });
+    };
+    const pump = () => {
+      if (signal?.aborted && !failure && finished.size < n) { while (heap.length) pop(); } // stop starting new ops
+      while (!failure && running < limit && heap.length) {
+        const j = pop(); const op = ops[j]; running++;
+        runOp(root, op).then(() => {
+          finished.add(j);
+          for (const k of dependents[j]) if (--waiting[k] === 0) push(k);
+          onStep?.(finished.size, op, j);
+        }, (e) => { if (!failure) failure = wrapError(e, op); }).then(async () => {
+          running--;
+          if (++sinceYield >= 200) { sinceYield = 0; await yieldToUI(); }
+          pump();
+        });
+      }
+      if (!running && (failure || !heap.length)) finish();
+    };
+    pump();
+  });
 }
 
 /** Reverse ops for restore */

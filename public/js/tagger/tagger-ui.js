@@ -7,7 +7,9 @@ import { detectRemap, mapPath, isIdentity } from '../core/remap.js';
 import { remapPanel } from '../core/remap-ui.js';
 import { createTagManifest, manifestFileName, parseManifest } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
-import { readTags, writeTags, AUDIO_EXT } from './index.js';
+import { startJob, activeFor, conflictFor, runPool, onJobs } from '../core/jobs.js';
+import { readTags, AUDIO_EXT } from './index.js';
+import { writeTagsOffThread } from './pool.js';
 import { FIELDS, PICTURE_TYPES, GENRES, cloneModel, fieldsEqual, customEqual, picturesEqual } from './model.js';
 import { compileFilenamePattern, parseFilename, suggestFilenamePatterns, autoNumber, exportCSV, importCSV, buildM3U8, COVER_NAMES, resizeImage } from './tools.js';
 import { searchReleases, getRelease, matchTracks, fetchCover, fetchLyrics } from './online.js';
@@ -35,6 +37,8 @@ export function mountTagger(el, { onSendToRenamer } = {}) {
     h('div', { id: 'tg-body' }),
   );
   render();
+  let wasBusy = false;
+  onJobs(() => { const busy = !!activeFor(T.root); if (busy !== wasBusy) { wasBusy = busy; paintBar(); } });
 }
 
 function segmented(options, get, set) {
@@ -435,11 +439,11 @@ function paintBar() {
   bar.append(
     h('div', { class: 'bar-info' },
       h('p', { class: 'bar-count' }, T.root ? h('strong', null, `${dirty} file${dirty === 1 ? '' : 's'}`) : 'No files', T.root ? ' with unsaved changes' : ''),
-      h('p', { class: 'bar-sub muted' }, T.sel.size ? `${T.sel.size} selected. ` : '', dirty ? `A backup of the old tags will be saved ${where}.` : '')),
+      h('p', { class: 'bar-sub muted' }, T.sel.size ? `${T.sel.size} selected. ` : '', activeFor(T.root) ? 'Saving in the background. You can keep editing or switch screens; progress is at the top.' : dirty ? `A backup of the old tags will be saved ${where}.` : '')),
     h('div', { class: 'btn-row' },
       // Phones: open the editor sheet for files ticked with the checkboxes.
       btn(T.sel.size > 1 ? `Edit ${T.sel.size}` : 'Edit', () => openSheet(true), { cls: 'only-compact', ic: 'pencil', disabled: !T.sel.size }),
-      btn(T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty || ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty })),
+      btn(activeFor(T.root) ? 'Saving…' : T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty || ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty || !!activeFor(T.root) })),
   );
 }
 
@@ -647,14 +651,28 @@ async function mbDialog() {
 const picsToJSON = (pics) => pics.map((p) => ({ type: p.type, mime: p.mime, desc: p.desc || '', data: bytesToBase64(p.data) }));
 const picsFromJSON = (pics) => pics.map((p) => ({ type: p.type, mime: p.mime, desc: p.desc || '', data: base64ToBytes(p.data) }));
 
+const nf = (n) => Number(n).toLocaleString('en-US');
+const MAX_FILES_IN_MEMORY = 192 * 1024 * 1024; // bytes of audio being processed at the same moment
+
+/**
+ * Save the changed files as a background job. Each file is independent, so several are read, rewritten and
+ * written at once (the byte-level work runs in Web Workers). Nothing can get mixed up:
+ *  - every file is paired with its OWN copy of its tags, taken when Save was pressed, so edits made
+ *    afterwards (or while saving) never leak into a file half way through;
+ *  - the ZIP / download keeps the file order of the list, whatever order the files finish in;
+ *  - a file only counts as saved (no longer "changed") if the tags on screen still equal what was written.
+ */
 async function save() {
   const rows = T.rows.filter((r) => r.dirty);
   if (!rows.length) return;
   const root = T.root;
+  if (activeFor(root) || await conflictFor(root)) { toast('A rename or tag save is still running on this folder. It keeps going in the background; save again when it has finished.', { type: 'warn', timeout: 7000 }); return; }
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) return;
-  const files = rows.map((r) => {
-    const picsChanged = !picturesEqual(r.model.pictures, r.orig.pictures);
-    return { path: r.path, format: r.model.format, before: { fields: r.orig.fields, custom: r.orig.custom, pictures: picsChanged ? picsToJSON(r.orig.pictures) : null }, after: { fields: r.model.fields, custom: r.model.custom, pictures: picsChanged ? `${r.model.pictures.length} picture(s)` : null } };
+  const opts = { id3Version: T.opts.id3Version, id3v1: T.opts.id3v1 };
+  const items = rows.map((r) => ({ r, path: r.path, name: r.name, size: r.size || 0, model: cloneModel(r.model) }));
+  const files = items.map(({ r, path, model }) => {
+    const picsChanged = !picturesEqual(model.pictures, r.orig.pictures);
+    return { path, format: model.format, before: { fields: r.orig.fields, custom: r.orig.custom, pictures: picsChanged ? picsToJSON(r.orig.pictures) : null }, after: { fields: model.fields, custom: model.custom, pictures: picsChanged ? `${model.pictures.length} picture(s)` : null } };
   });
   const manifest = createTagManifest({ root: root.name, source: root.kind, files, options: { ...T.opts } });
   const mName = manifestFileName('tags');
@@ -667,31 +685,44 @@ async function save() {
   };
   try { await writeManifest(); } catch (e) { if (!(await confirmDialog('Could not write the backup file', `${e.message}. Continue? The backup stays in History and is offered as a download.`))) return; }
   if (root.kind === 'files' && root.writable) await saveBlob(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), mName, { description: 'NameTag backup', accept: { 'application/json': ['.json'] } });
-  const p = progress('Saving tags');
-  let done = 0; const errors = [];
-  for (const r of rows) {
-    if (p.cancelled) break;
-    try {
-      const file = root.getFullFile ? await root.getFullFile(r.path) : await r.getFile();
-      const { blob } = await writeTags(file, r.model, { id3Version: T.opts.id3Version, id3v1: T.opts.id3v1 });
-      if (zip) zip.file(r.path, blob); else await root.writeFile(r.path, blob);
-      if (root.kind === 'mem') await root.writeFile(r.path, blob);
-      r.orig = cloneModel(r.model); r.dirty = false; done++;
-    } catch (e) { errors.push(`${r.name}: ${e.message}`); }
-    p.set(done + errors.length, rows.length, r.name);
-    await tick();
-  }
-  manifest.status = errors.length || done < rows.length ? 'partial' : 'complete';
-  manifest.completed = done;
-  if (errors.length) manifest.errors = errors;
-  try { await writeManifest(); } catch { /* ignore */ }
-  if (root.kind === 'zip') { p.set(0, 100, 'Building ZIP…'); try { await root.finalize({ onProgress: (pc) => p.set(Math.round(pc), 100, 'Building ZIP…'), download }); } catch (e) { errors.push(`ZIP: ${e.message}`); } }
-  if (zip) { p.set(0, 100, 'Building ZIP…'); await download(await zip.generateAsync({ type: 'blob' }, (m) => p.set(Math.round(m.percent), 100, 'Building ZIP…')), `${root.name}-tagged.zip`); }
-  p.close();
-  await addHistory({ id: manifest.id, type: 'tags', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: manifest.status });
-  if (errors.length) openDialog({ title: `${errors.length} file(s) could not be saved`, body: h('ul', { class: 'mono small' }, errors.map((e) => h('li', null, e))) });
-  else toast(`Saved tags in ${done} file${done === 1 ? '' : 's'}.${zip ? ' Downloaded as ZIP.' : root.kind === 'zip' ? ' The ZIP was updated.' : ''}`, { type: 'success' });
-  refreshView(); renderSource();
+  await addHistory({ id: manifest.id, type: 'tags', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: 'in-progress' });
+  const total = items.length;
+  const job = startJob({ id: manifest.id, kind: 'tags', title: `Saving tags in ${nf(total)} file${total === 1 ? '' : 's'}${root.name ? ` in "${root.name}"` : ''}`, root, total, run: async (ctx) => {
+    const errors = []; const results = new Array(total); let finished = 0;
+    ctx.set(0, total, 'Starting…');
+    await runPool(items, async (it, i) => {
+      try {
+        const file = root.getFullFile ? await root.getFullFile(it.path) : await it.r.getFile();
+        const { blob } = await writeTagsOffThread(file, it.model, opts);
+        if (zip) results[i] = blob; else await root.writeFile(it.path, blob);
+        if (root.kind === 'mem') await root.writeFile(it.path, blob);
+        // The file now holds it.model. Update the row, unless the person already changed it again meanwhile.
+        const r = it.r; r.orig = cloneModel(it.model);
+        r.dirty = !(fieldsEqual(r.model.fields, r.orig.fields) && customEqual(r.model.custom, r.orig.custom) && picturesEqual(r.model.pictures, r.orig.pictures));
+        it.saved = true;
+      } catch (e) { errors.push(`${it.name}: ${e.message}`); }
+      ctx.set(++finished, total, it.name);
+    }, { limit: root.isSaf ? 2 : 3, weight: (it) => it.size, maxWeight: MAX_FILES_IN_MEMORY, shouldStop: () => ctx.cancelled });
+    const done = items.filter((it) => it.saved).length;
+    if (zip) items.forEach((it, i) => { if (it.saved && results[i]) zip.file(it.path, results[i]); }); // list order, not finishing order
+    const cancelled = ctx.cancelled && done + errors.length < total;
+    manifest.status = errors.length || done < total ? 'partial' : 'complete';
+    manifest.completed = done;
+    manifest.savedPaths = items.filter((it) => it.saved).map((it) => it.path);
+    if (errors.length) manifest.errors = errors; else delete manifest.errors;
+    try { await writeManifest(); } catch { /* ignore */ }
+    if (root.kind === 'zip') { try { await root.finalize({ onProgress: (pc) => ctx.set(total, total, `Building ZIP… ${Math.round(pc)}%`), download }); } catch (e) { errors.push(`ZIP: ${e.message}`); } }
+    if (zip) { ctx.set(total, total, 'Building ZIP…'); await download(await zip.generateAsync({ type: 'blob' }, (m) => ctx.set(total, total, `Building ZIP… ${Math.round(m.percent)}%`)), `${root.name}-tagged.zip`); }
+    await updateHistory(manifest.id, { manifest, status: manifest.status });
+    if (errors.length || cancelled) {
+      return { status: 'partial', details: errors, message: cancelled ? `Stopped: tags saved in ${nf(done)} of ${nf(total)} files. The others are unchanged and still marked as changed.` : `Saved ${nf(done)} of ${nf(total)} files; ${nf(errors.length)} could not be saved.` };
+    }
+    return { status: 'done', message: `Saved tags in ${nf(done)} file${done === 1 ? '' : 's'}.${zip ? ' Downloaded as ZIP.' : root.kind === 'zip' ? ' The ZIP was updated.' : ''}` };
+  } });
+  paintBar();
+  await job.promise;
+  if (T.root === root) { refreshView(); renderSource(); }
+  paintBar();
 }
 
 /* ------------------------------------------------------------------ restore */

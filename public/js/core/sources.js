@@ -40,6 +40,8 @@ function sortEntries(list) {
 
 class BaseRoot {
   constructor(kind, name) { this.kind = kind; this.name = name; this.manifests = []; }
+  /** How many renames / file writes may run at the same time. In-memory roots have nothing to overlap. */
+  get maxConcurrency() { return 1; }
   get label() { return this.name; }
   /** Filter hook shared by all roots */
   _accept(name, opts) {
@@ -51,6 +53,7 @@ class BaseRoot {
 /* ------------------------------------------------------------------ folder (FSA) */
 export class DirRoot extends BaseRoot {
   constructor(handle) { super('dir', handle.name); this.handle = handle; this.canRenameInPlace = true; this.allowCopyFallback = false; }
+  get maxConcurrency() { return 6; }
 
   static async pick() {
     const handle = await window.showDirectoryPicker({ id: 'nametag', mode: 'readwrite' });
@@ -202,6 +205,8 @@ export class SafRoot extends BaseRoot {
     this.canRenameInPlace = true; this.allowCopyFallback = false; this.isSaf = true;
     this.ids = new Map(); // path -> { id, isDir }
   }
+  // Android's document provider handles a few calls at a time well; more only adds retries.
+  get maxConcurrency() { return 2; }
   static get plugin() { return window.Capacitor.Plugins.NameTagFolders; }
   static async pick() {
     let r;

@@ -2,6 +2,7 @@ package app.nametag;
 
 import android.app.Activity;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.UriPermission;
 import android.database.Cursor;
@@ -240,6 +241,27 @@ public class FoldersPlugin extends Plugin {
             JSObject r = new JSObject(); r.put("deleted", ok); call.resolve(r);
         } catch (Exception e) { call.reject("Delete failed: " + e.getMessage(), e); }
     }
+
+    // ---- keep-alive: a foreground service while a rename / tag save runs, so Android does not suspend the app
+    private void keepAlive(PluginCall call, boolean start) {
+        try {
+            Context c = getContext();
+            Intent i = new Intent(c, KeepAliveService.class);
+            if (!start) { c.stopService(i); call.resolve(); return; }
+            i.putExtra(KeepAliveService.EXTRA_TITLE, call.getString("title", "NameTag"));
+            i.putExtra(KeepAliveService.EXTRA_TEXT, call.getString("text", "Working…"));
+            i.putExtra(KeepAliveService.EXTRA_DONE, call.getInt("done", 0));
+            i.putExtra(KeepAliveService.EXTRA_TOTAL, call.getInt("total", 0));
+            androidx.core.content.ContextCompat.startForegroundService(c, i);
+            call.resolve();
+        } catch (Exception e) { call.resolve(); /* best effort: the job itself still runs */ }
+    }
+
+    @PluginMethod public void startKeepAlive(PluginCall call) { keepAlive(call, true); }
+
+    @PluginMethod public void updateKeepAlive(PluginCall call) { keepAlive(call, true); }
+
+    @PluginMethod public void stopKeepAlive(PluginCall call) { keepAlive(call, false); }
 
     private static String mimeFor(String name) {
         int dot = name == null ? -1 : name.lastIndexOf('.');

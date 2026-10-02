@@ -32,6 +32,7 @@ export function parseManifest(text) {
   try { m = JSON.parse(text); } catch { throw new Error('Not a valid JSON file'); }
   if (!m || m.app !== APP || !['rename', 'tags'].includes(m.type)) throw new Error('This JSON file was not created by NameTag');
   if (m.type === 'rename' && !Array.isArray(m.operations)) throw new Error('Manifest has no operations');
+  if (m.type === 'rename') normaliseInterrupted(m);
   if (m.type === 'tags' && !Array.isArray(m.files)) throw new Error('Manifest has no file list');
   return m;
 }
@@ -45,4 +46,23 @@ export function summarizeManifest(m) {
     return `${m.operations.length} ${what}${m.operations.length === 1 ? '' : 's'}${files !== m.operations.length ? ` (${files} visible renames)` : ''}`;
   }
   return `${m.files.length} file${m.files.length === 1 ? '' : 's'} with tag changes`;
+}
+
+/**
+ * A rename that was cut off (app closed, phone locked and killed) leaves a checkpoint: the planned
+ * operations plus `doneIdx`, the ones that finished. Undo must only reverse what really happened, and
+ * Resume needs what is left, so split the two here. Safe to call on any manifest.
+ */
+export function normaliseInterrupted(m) {
+  if (m.status !== 'in-progress' || !Array.isArray(m.doneIdx)) return m;
+  const done = new Set(m.doneIdx);
+  const planned = m.operations;
+  m.remaining = planned.filter((_, i) => !done.has(i));
+  m.operations = m.doneIdx.slice().sort((a, b) => a - b).map((i) => planned[i]).filter(Boolean);
+  m.status = 'partial';
+  m.interrupted = true;
+  m.completed = m.operations.length;
+  m.planned = planned.length;
+  delete m.doneIdx;
+  return m;
 }
