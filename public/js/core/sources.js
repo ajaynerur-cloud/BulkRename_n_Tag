@@ -205,8 +205,8 @@ export class SafRoot extends BaseRoot {
     this.canRenameInPlace = true; this.allowCopyFallback = false; this.isSaf = true;
     this.ids = new Map(); // path -> { id, isDir }
   }
-  // Android's document provider handles a few calls at a time well; more only adds retries.
-  get maxConcurrency() { return 2; }
+  // The native plugin runs file calls on a small thread pool, so a few at a time overlap.
+  get maxConcurrency() { return 4; }
   static get plugin() { return window.Capacitor.Plugins.NameTagFolders; }
   static async pick() {
     let r;
@@ -237,7 +237,7 @@ export class SafRoot extends BaseRoot {
     const out = []; this.manifests = []; this.ids.clear();
     const skipped = new Set();
     for (const e of raw) {
-      this.ids.set(e.path, { id: e.id, isDir: e.isDir });
+      this.ids.set(e.path, { id: e.id, isDir: e.isDir, size: e.size, mtime: e.mtime });
       const parent = dirname(e.path);
       if (parent && skipped.has(parent)) { if (e.isDir) skipped.add(e.path); continue; }
       const acc = this._accept(e.name, { includeHidden, includeTemp });
@@ -266,18 +266,19 @@ export class SafRoot extends BaseRoot {
       try { await SafRoot.plugin.rename({ uri: this.uri, id: r.id, name: basename(from) }); } catch { /* keep going */ }
       throw new Error(`Android renamed "${basename(from)}" to "${r.name}" instead of "${want}". Nothing was changed for this item.`);
     }
-    this.ids.delete(from); this.ids.set(to, { id: r.id, isDir: x.isDir });
+    this.ids.delete(from); this.ids.set(to, { ...x, id: r.id });
     if (x.isDir) {
       // Children may have new ids now: re-read that folder.
       for (const k of [...this.ids.keys()]) if (k.startsWith(`${from}/`)) this.ids.delete(k);
       const sub = (await SafRoot.plugin.list({ uri: this.uri, id: r.id, recursive: true })).entries || [];
-      for (const e of sub) this.ids.set(`${to}/${e.path}`, { id: e.id, isDir: e.isDir });
+      for (const e of sub) this.ids.set(`${to}/${e.path}`, { id: e.id, isDir: e.isDir, size: e.size, mtime: e.mtime });
     }
   }
   /** Whole file in memory (needed to write tags). */
   async getFullFile(path) {
     const x = this.ids.get(path); if (!x) throw new Error(`Not found in folder: ${path}`);
-    const info = (await this._children(this.idOf(dirname(path)))).find((c) => c.id === x.id) || {};
+    // Size and date come from the listing already made; listing the whole parent folder again for every file is O(n^2).
+    const info = x.size != null ? x : ((await this._children(this.idOf(dirname(path)))).find((c) => c.id === x.id) || {});
     const bytes = await this._read(x.id, 0, info.size ?? Number.MAX_SAFE_INTEGER);
     return new File([bytes], basename(path), { lastModified: info.mtime || Date.now() });
   }
@@ -295,6 +296,7 @@ export class SafRoot extends BaseRoot {
         await SafRoot.plugin.write({ uri: this.uri, id, data, append: !first });
       }
     }
+    const cur = this.ids.get(path); if (cur) { cur.size = blob.size; cur.mtime = Date.now(); }
   }
   async remove(path) { await SafRoot.plugin.delete({ uri: this.uri, id: this.idOf(path) }); this.ids.delete(path); }
   async finalize() { return { saved: true, message: 'Changes were written directly to the folder.' }; }

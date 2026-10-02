@@ -702,7 +702,7 @@ async function save() {
         it.saved = true;
       } catch (e) { errors.push(`${it.name}: ${e.message}`); }
       ctx.set(++finished, total, it.name);
-    }, { limit: root.isSaf ? 2 : 3, weight: (it) => it.size, maxWeight: MAX_FILES_IN_MEMORY, shouldStop: () => ctx.cancelled });
+    }, { limit: root.isSaf ? 4 : 3, weight: (it) => it.size, maxWeight: MAX_FILES_IN_MEMORY, shouldStop: () => ctx.cancelled });
     const done = items.filter((it) => it.saved).length;
     if (zip) items.forEach((it, i) => { if (it.saved && results[i]) zip.file(it.path, results[i]); }); // list order, not finishing order
     const cancelled = ctx.cancelled && done + errors.length < total;

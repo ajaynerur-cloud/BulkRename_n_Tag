@@ -43,6 +43,10 @@ public class FoldersPlugin extends Plugin {
         Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED
     };
 
+    /** Capacitor runs plugin methods one at a time on a single thread. File reads / writes / renames go to this
+     *  pool instead, so several can be in flight at once (call.resolve / reject are safe from any thread). */
+    private static final java.util.concurrent.ExecutorService POOL = java.util.concurrent.Executors.newFixedThreadPool(4);
+
     private ContentResolver resolver() { return getContext().getContentResolver(); }
 
     private Uri tree(PluginCall call) {
@@ -151,7 +155,9 @@ public class FoldersPlugin extends Plugin {
 
     /** Reads a byte range as base64 (seeks when the provider allows it). */
     @PluginMethod
-    public void read(PluginCall call) {
+    public void read(PluginCall call) { POOL.execute(() -> readImpl(call)); }
+
+    private void readImpl(PluginCall call) {
         try {
             Uri tree = tree(call);
             Uri d = doc(tree, call.getString("id"));
@@ -192,7 +198,9 @@ public class FoldersPlugin extends Plugin {
 
     /** Writes base64 data: replaces (or appends to) an existing document, or creates a new one in a folder. */
     @PluginMethod
-    public void write(PluginCall call) {
+    public void write(PluginCall call) { POOL.execute(() -> writeImpl(call)); }
+
+    private void writeImpl(PluginCall call) {
         try {
             Uri tree = tree(call);
             String id = call.getString("id");
@@ -218,7 +226,9 @@ public class FoldersPlugin extends Plugin {
 
     /** Renames in place. Returns the new id and the name the provider actually used. */
     @PluginMethod
-    public void rename(PluginCall call) {
+    public void rename(PluginCall call) { POOL.execute(() -> renameImpl(call)); }
+
+    private void renameImpl(PluginCall call) {
         try {
             Uri tree = tree(call);
             String id = call.getString("id");
@@ -234,7 +244,9 @@ public class FoldersPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void delete(PluginCall call) {
+    public void delete(PluginCall call) { POOL.execute(() -> deleteImpl(call)); }
+
+    private void deleteImpl(PluginCall call) {
         try {
             Uri tree = tree(call);
             boolean ok = DocumentsContract.deleteDocument(resolver(), doc(tree, call.getString("id")));
