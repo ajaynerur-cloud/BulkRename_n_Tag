@@ -1,4 +1,4 @@
-NameTag update: only the files that changed since the previous zip.
+NameTag update: UI refresh + rules text fixes. Only the files that changed since the previous zip.
 Copy them into your repository at the same paths (replace existing files), commit, then run "Android APK".
 
 New files:
@@ -6,10 +6,11 @@ New files:
 
 Changed files:
   public/css/app.css
-  public/js/core/sources.js
+  public/index.html
   public/js/core/ui.js
   public/js/renamer/renamer-ui.js
-  public/js/tagger/tagger-ui.js
+  public/js/renamer/rules.js
+  README.md
 
 Deleted files:
   (none)
@@ -17,44 +18,40 @@ Deleted files:
 What changed and why
 ---------------------
 
-1. Fixed "the folder doesn't open" in the Android app (the real bug).
+1. Text that was hidden or cut off is now shown.
+   - Rule cards: the settings summary was squeezed onto one line next to the title and cut to
+     "Normalise separators, rem…". Title and summary now sit on two lines, the summary wraps
+     to two lines when collapsed and shows in full when the rule is open (full text on hover too).
+   - The summary now shows the rule's real settings ("Remove: First N characters", "Separator: “·-·”")
+     instead of the generic description. Whitespace-only values such as " - " are made visible.
+   - Tag editor on phones: the Main / More / Cover / Lyrics / Custom / Info tabs collapsed to zero
+     height (flex item with overflow in a scrolling column). Fixed, and the tabs wrap if narrow.
+   - Phone toolbar: "Open folder" was cut off ("Open fo") behind a horizontal scroll. The mode switch
+     now has its own row and the source buttons share the next row.
+   - Pattern analyser examples: old and new names are stacked and wrap instead of being truncated.
+   - Long checkbox labels and help text wrap correctly; preview names show the full name on hover.
 
-   Capacitor's Android WebView auto-injects `window.Capacitor` (registerPlugin,
-   isNativePlatform, etc.) and it auto-loads the *native* Java side of every
-   plugin. But `Capacitor.Plugins.<Name>` -- the JS object your web code actually
-   calls -- is only created once something on the WEB side calls
-   `Capacitor.registerPlugin(name)`. Nothing in this app ever did that for our
-   custom NameTagFolders plugin, nor for the official Filesystem/Share plugins
-   (there's no bundler here to auto-wire that up the way a normal Capacitor app
-   would). So in every built APK:
-     - `support.safPicker` was always false, so the "Open folder" button never
-       appeared at all, and
-     - `nativeSave()` (the code that writes results to Documents/NameTag) was
-       silently unable to find the Filesystem/Share plugins either.
+2. Clearer rule names, grouped in the Add rule menu (Clean up / Edit text / Build new names / Advanced):
+   Clean up -> Tidy up names, Change case -> Change letter case, Clear existing pattern -> Strip numbers
+   and tags, Find & replace -> Find and replace, Replace list -> Replace many at once, Remove -> Remove
+   characters, Keep part -> Keep only part, Numbering -> Add numbers, Template -> Build from template,
+   Extension -> Change extension, Date -> Add or reformat date, Names from list -> Rename from a list,
+   Custom script -> Custom script (JavaScript). Rule types and saved settings/presets are unchanged,
+   so existing presets and undo files keep working.
 
-   Fix: `public/js/core/sources.js` and `public/js/core/ui.js` now call
-   `window.Capacitor.registerPlugin(...)` for NameTagFolders, Filesystem and
-   Share when running inside the native app. This is a no-op on the web (where
-   `window.Capacitor` doesn't exist), so nothing changes there.
+3. UI refresh (desktop and mobile).
+   - New palette (neutral surfaces, indigo accent) for light and dark themes, softer cards and shadows.
+   - Desktop (>=1100px): navigation moves into a left sidebar; the theme switch sits at its bottom.
+   - Rules: icon tiles, chevrons, "Changed only" as a toggle chip, floating action bar.
+   - Phones: two-line preview rows with an arrow for the new name, larger touch targets, bottom sheets.
 
-2. Mobile/Android browsers: "Import a folder" is now a visible button.
-
-   On browsers that can't open a real folder in place (every Android browser,
-   Firefox, Safari), the only way to bring a folder in at all was already there
-   ("Import a folder (copy)...") but it was hidden inside the unlabeled "..."
-   menu. A person who only sees "Open ZIP" understandably reads that as "the
-   folder won't open". Renamer and Tag editor now show a real "Import a folder"
-   button in that case, and the helper text next to it was updated to mention
-   it.
-
-3. Small mobile/Android polish.
-
-   The `is-native-app` class that was already being added to <html> inside the
-   Android app wasn't used by anything; app.css now uses it to keep the
-   "Install" button off (it only ever mattered for the web/PWA install prompt,
-   which doesn't apply once you're already in the app).
-
-After copying these files in, run the "Android APK" GitHub Action again to get
-a build with the fix (a pure JS/CSS change, so no cap add/sync setup is needed
-locally -- the existing workflow regenerates the Android project from scratch
-every time).
+4. Background and parallel work (renames and tag saves).
+   - New job manager (core/jobs.js, core/jobs-ui.js): work continues when you change screens or apps; progress
+     card with Stop at the top; Web Lock, wake lock, unload warning, update reload deferred while busy.
+   - Renames run in parallel with a dependency graph (core/planner.js executeOpsParallel): numbering and names
+     are fixed at plan time, so results equal the sequential result. Stop/failure leave an exactly undoable state.
+   - Undo file is checkpointed during the run; interrupted renames can be resumed (Renamer and History).
+   - Tag saves run up to 3 files at once in a Web Worker pool (tagger/pool.js, worker.js) with a memory budget.
+   - Android: foreground service (KeepAliveService.java, plugin methods, manifest entries in prepare.mjs).
+     Not compiled in this environment: build the APK once to confirm.
+   - Tests: tests/parallel.test.mjs. Service worker precache list updated.

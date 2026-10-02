@@ -43,23 +43,23 @@ npm run check      # syntax check + service-worker precache list check
 
 | Rule | What it does |
 | --- | --- |
-| Clean up | Underscores, dots, dashes (keep, space out or remove), camelCase splitting, `%20` decoding, bracketed junk, "(1)" / "- Copy" markers, accents and transliteration, emoji, Windows-invalid characters, spacing |
-| Replace | Plain text or regex with `$1`; match case; whole word; first, last or all matches; name, extension or full name |
-| Replace list | Many find/replace pairs at once |
-| Remove | First or last N characters, a range, text, characters, digits, text before or after a marker, symbols |
-| Change case | Title (small words, acronyms), sentence, lower, upper, camel, Pascal, snake, kebab, CONSTANT, dot.case, with exceptions and extension case |
+| Tidy up names | Underscores, dots, dashes (keep, space out or remove), camelCase splitting, `%20` decoding, bracketed junk, "(1)" / "- Copy" markers, accents and transliteration, emoji, Windows-invalid characters, spacing |
+| Find and replace | Plain text or regex with `$1`; match case; whole word; first, last or all matches; name, extension or full name |
+| Replace many at once | Many find/replace pairs at once |
+| Remove characters | First or last N characters, a range, text, characters, digits, text before or after a marker, symbols |
+| Change letter case | Title (small words, acronyms), sentence, lower, upper, camel, Pascal, snake, kebab, CONSTANT, dot.case, with exceptions and extension case |
 | Add text | Prefix, suffix, or insert at a position (from start or end) |
-| Numbering | Prefix, suffix, insert or replace; start, step, padding; decimal, letters, Roman or hex; reset per folder |
-| Template | Build the name from variables (see below) |
-| Extension | Lower or upper case, replace, remove, add, fix double extensions, detect the real type from file bytes |
+| Add numbers | Prefix, suffix, insert or replace; start, step, padding; decimal, letters, Roman or hex; reset per folder |
+| Build from template | Build the name from variables (see below) |
+| Change extension | Lower or upper case, replace, remove, add, fix double extensions, detect the real type from file bytes |
 | Swap | Split by a separator and reorder the parts ("Artist - Title" to "Title - Artist") |
-| Trim | Keep text before, after or between markers; maximum length |
-| Clear pattern | Strip leading track numbers (also "CD1-", "Track 03"), trailing numbers, dates, common prefix or suffix, quality tags (1080p, x264, 320kbps), URLs |
-| Date | Insert modified date or today; reformat dates found in names |
-| List | New names from a pasted list |
-| Script | Your own JavaScript: `return name.toUpperCase();` |
+| Keep only part | Keep text before, after or between markers; maximum length |
+| Strip numbers and tags | Strip leading track numbers (also "CD1-", "Track 03"), trailing numbers, dates, common prefix or suffix, quality tags (1080p, x264, 320kbps), URLs |
+| Add or reformat date | Insert modified date or today; reformat dates found in names |
+| Rename from a list | New names from a pasted list |
+| Custom script (JavaScript) | Your own JavaScript: `return name.toUpperCase();` |
 
-**Template variables:** `{name} {original} {ext} {n} {n:3} {dn} {total} {parent} {parent:2} {root} {path:-} {mdate:YYYY-MM-DD} {now:HH.mm} {w:1} {w:-1} {c:1-4} {size} {bytes} {rand:6} {uuid}`, plus audio tags `{artist} {title} {album} {albumartist} {track:2} {disc} {year} {genre} {composer} {bitrate} {duration}`. Fallbacks use `|`, for example `{artist|Unknown}`.
+**Template variables** (Build from template, Add text, Find and replace): `{name} {original} {ext} {n} {n:3} {dn} {total} {parent} {parent:2} {root} {path:-} {mdate:YYYY-MM-DD} {now:HH.mm} {w:1} {w:-1} {c:1-4} {size} {bytes} {rand:6} {uuid}`, plus audio tags `{artist} {title} {album} {albumartist} {track:2} {disc} {year} {genre} {composer} {bitrate} {duration}`. Fallbacks use `|`, for example `{artist|Unknown}`.
 
 **Pattern analyser.** It looks at separators and their consistency, field types (number, constant, date, text), common prefixes and suffixes, numbering (gaps, duplicates, padding), case style, junk (brackets, `%20`, copy markers, quality tags, URLs), camera and date names, invalid characters, reserved names, length, extension mix and audio files. It shows the detected pattern (for example `[##]_[text]`), proposes a new one, and offers ranked suggestion cards. Each card shows three before-and-after examples and can be applied in one click.
 
@@ -70,6 +70,14 @@ npm run check      # syntax check + service-worker precache list check
 - **Restore simulates first.** It shows each item as ready, missing or blocked, then reverses the operations in order. It works from the Restore tab, from History, or on another computer.
 
 **Presets:** clean names, music "01 - Title", from tags, photos by date, web slug, snake_case, sequential "Folder 001", remove numbering, lowercase extensions. You can save your own presets and export or import them as JSON.
+
+### Background jobs and parallel work
+
+- **Renames and tag saves are background jobs.** They do not block the screen. A progress card at the top shows each job with Stop; switching between Renamer, Tag editor, History and Guide never interrupts it. Only one job runs per folder or ZIP at a time, a second one on the same source is refused.
+- **Parallel but safe.** Every target name is fixed when the plan is built (numbers, tags and clash suffixes included), so running steps at the same time cannot change them. A step waits for any earlier step that touches the same path, a parent folder, or (for folder renames) anything inside the folder. Folders and ZIPs use a limit suited to the source (6 for browser folders, 2 for Android folders, 1 for ZIP and imports). `tests/parallel.test.mjs` checks that parallel results equal sequential ones on random trees, including swaps, failures, Stop and undo.
+- **Tag saves** run up to 3 files at once in Web Workers, with a memory budget for large files. Each file is saved from its own snapshot of the edits.
+- **Staying alive.** The browser version holds a Web Lock and a screen wake lock while working, warns before the tab is closed, and delays app-update reloads until jobs finish. The Android app also runs a foreground service with a progress notification, so Android does not suspend it in the background.
+- **If the app is killed anyway,** the undo file records what was done. Undo restores it; Resume (History tab) renames the rest. An interrupted tag save is recovered with the backup file and Restore.
 
 ### Extension renamer
 
