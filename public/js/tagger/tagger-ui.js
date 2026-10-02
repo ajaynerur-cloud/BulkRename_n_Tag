@@ -7,8 +7,8 @@ import { detectRemap, mapPath, isIdentity } from '../core/remap.js';
 import { remapPanel } from '../core/remap-ui.js';
 import { createTagManifest, manifestFileName, parseManifest } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
-import { startJob, activeFor, conflictFor, runPool, onJobs } from '../core/jobs.js';
-import { readTags, AUDIO_EXT } from './index.js';
+import { startJob, activeFor, conflictFor, runPool, onJobs, memoryBudget } from '../core/jobs.js';
+import { readTags, AUDIO_EXT, planMp3Patch } from './index.js';
 import { writeTagsOffThread } from './pool.js';
 import { FIELDS, PICTURE_TYPES, GENRES, cloneModel, fieldsEqual, customEqual, picturesEqual } from './model.js';
 import { compileFilenamePattern, parseFilename, suggestFilenamePatterns, autoNumber, exportCSV, importCSV, buildM3U8, COVER_NAMES, resizeImage } from './tools.js';
@@ -692,17 +692,28 @@ async function save() {
     ctx.set(0, total, 'Starting…');
     await runPool(items, async (it, i) => {
       try {
-        const file = root.getFullFile ? await root.getFullFile(it.path) : await it.r.getFile();
-        const { blob } = await writeTagsOffThread(file, it.model, opts);
-        if (zip) results[i] = blob; else await root.writeFile(it.path, blob);
-        if (root.kind === 'mem') await root.writeFile(it.path, blob);
+        // Fast path (Android, MP3): the new tag fits where the old one was, so only a few KB are read and written.
+        let patched = false;
+        if (root.canPatch && /\.mp3$/i.test(it.path)) {
+          try {
+            const lazy = root.lazyFile(it.path);
+            const plan = lazy && await planMp3Patch(lazy, it.model, opts);
+            if (plan) { await root.writeAt(it.path, plan.writes, lazy.size); patched = true; }
+          } catch (e) { if (/size while patching/.test(e.message)) throw e; /* anything else: fall back to the full rewrite below */ }
+        }
+        if (!patched) {
+          const file = root.getFullFile ? await root.getFullFile(it.path) : await it.r.getFile();
+          const { blob } = await writeTagsOffThread(file, it.model, opts);
+          if (zip) results[i] = blob; else await root.writeFile(it.path, blob);
+          if (root.kind === 'mem') await root.writeFile(it.path, blob);
+        }
         // The file now holds it.model. Update the row, unless the person already changed it again meanwhile.
         const r = it.r; r.orig = cloneModel(it.model);
         r.dirty = !(fieldsEqual(r.model.fields, r.orig.fields) && customEqual(r.model.custom, r.orig.custom) && picturesEqual(r.model.pictures, r.orig.pictures));
         it.saved = true;
       } catch (e) { errors.push(`${it.name}: ${e.message}`); }
       ctx.set(++finished, total, it.name);
-    }, { limit: root.isSaf ? 4 : 3, weight: (it) => it.size, maxWeight: MAX_FILES_IN_MEMORY, shouldStop: () => ctx.cancelled });
+    }, { limit: root.isSaf ? 6 : 3, weight: (it) => (root.canPatch && /\.mp3$/i.test(it.path) ? Math.min(it.size, 1 << 20) : it.size), maxWeight: MAX_FILES_IN_MEMORY, budget: memoryBudget, shouldStop: () => ctx.cancelled });
     const done = items.filter((it) => it.saved).length;
     if (zip) items.forEach((it, i) => { if (it.saved && results[i]) zip.file(it.path, results[i]); }); // list order, not finishing order
     const cancelled = ctx.cancelled && done + errors.length < total;

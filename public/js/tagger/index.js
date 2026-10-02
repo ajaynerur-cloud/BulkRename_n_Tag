@@ -104,4 +104,30 @@ export async function writeTags(file, model, opts = {}) {
   return { blob, notes };
 }
 
+/**
+ * Fast path for MP3: when the edited ID3v2 tag fits inside the space the old tag (plus its padding) already
+ * takes, only the first bytes (and the 128-byte ID3v1 block, if any) need to change; the audio is not touched.
+ * Works on a lazy file (only slices are read), so a phone never has to move whole songs through its storage bridge.
+ * Returns { writes: [{offset, bytes}], notes } or null when the file must be rewritten the normal way.
+ */
+export async function planMp3Patch(file, model, opts = {}) {
+  if (opts.strip) return null;
+  if (await detectFormat(file) !== 'mp3') return null;
+  const L = await mp3Layout(file);
+  if (!L.tagLen || !L.tag) return null;
+  const m = cleanModel({ ...model, fields: { ...model.fields }, custom: [...(model.custom || [])], pictures: [...(model.pictures || [])], notes: [] });
+  if (!Object.keys(m.fields).length && !m.custom.length && !m.pictures.length) return null;
+  const version = opts.id3Version === 4 ? 4 : 3;
+  const base = buildID3v2(m, { version, original: L.tag, padding: 0 });
+  if (base.bytes.length > L.tagLen) return null;
+  const built = buildID3v2(m, { version, original: L.tag, padding: L.tagLen - base.bytes.length });
+  if (built.bytes.length !== L.tagLen) return null;
+  const writes = [{ offset: 0, bytes: built.bytes }];
+  const mode = opts.id3v1 || 'update';
+  if (mode === 'remove') { if (L.v1) return null; }
+  else if (mode === 'always') { if (!L.v1) return null; writes.push({ offset: file.size - 128, bytes: buildID3v1(m.fields) }); }
+  else if (mode === 'update' && L.v1) writes.push({ offset: file.size - 128, bytes: buildID3v1(m.fields) });
+  return { writes, notes: built.notes };
+}
+
 export { concat };

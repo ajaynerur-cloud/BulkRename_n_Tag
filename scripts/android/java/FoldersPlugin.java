@@ -224,6 +224,30 @@ public class FoldersPlugin extends Plugin {
         } catch (Exception e) { call.reject("Could not write the file: " + e.getMessage(), e); }
     }
 
+    /** Overwrites bytes at an offset inside an existing file (length unchanged). Used to patch the tag at the start of a song. */
+    @PluginMethod
+    public void writeAt(PluginCall call) { POOL.execute(() -> writeAtImpl(call)); }
+
+    private void writeAtImpl(PluginCall call) {
+        try {
+            Uri tree = tree(call);
+            Uri d = doc(tree, call.getString("id"));
+            long offset = call.getData().optLong("offset", 0);
+            byte[] data = Base64.decode(call.getString("data", ""), Base64.DEFAULT);
+            try (ParcelFileDescriptor pfd = resolver().openFileDescriptor(d, "rw")) {
+                if (pfd == null) throw new IllegalStateException("Cannot open file for writing");
+                long before = pfd.getStatSize();
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(pfd.getFileDescriptor())) {
+                    java.nio.channels.FileChannel ch = out.getChannel();
+                    ch.position(offset);
+                    java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(data);
+                    while (bb.hasRemaining()) ch.write(bb);
+                }
+                JSObject r = new JSObject(); r.put("before", before); r.put("after", pfd.getStatSize()); call.resolve(r);
+            }
+        } catch (Exception e) { call.reject("Could not patch the file: " + e.getMessage(), e); }
+    }
+
     /** Renames in place. Returns the new id and the name the provider actually used. */
     @PluginMethod
     public void rename(PluginCall call) { POOL.execute(() -> renameImpl(call)); }

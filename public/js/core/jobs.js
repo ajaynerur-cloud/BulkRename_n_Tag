@@ -153,27 +153,34 @@ function progressSideEffects(job) {
 }
 
 /* ------------------------------------------------------------------ small concurrency helpers */
+/** Memory shared by every running job: two tag saves at once must not each assume they own all of it. */
+export const memoryBudget = { used: 0, pumps: new Set() };
 /**
  * Run `worker(item, index)` over items with at most `limit` running at once, and never more than
- * `maxWeight` of summed weight() in flight (so a batch of big files cannot exhaust memory). Items are
- * started in order. Stops starting new items when shouldStop() returns true. Results keep item order.
+ * `maxWeight` of summed weight() in flight (so a batch of big files cannot exhaust memory). Pass the same
+ * `budget` object to several pools (jobs) and they share that limit. Items are started in order. Stops
+ * starting new items when shouldStop() returns true. Results keep item order.
  */
-export async function runPool(items, worker, { limit = 3, weight = () => 0, maxWeight = Infinity, shouldStop = () => false } = {}) {
+export async function runPool(items, worker, { limit = 3, weight = () => 0, maxWeight = Infinity, shouldStop = () => false, budget = null } = {}) {
   const results = new Array(items.length);
-  let next = 0; let inflight = 0; let weightNow = 0;
+  const b = budget || { used: 0, pumps: new Set() };
+  let next = 0; let inflight = 0;
   return new Promise((resolve) => {
+    let finished = false;
     const pump = () => {
+      if (finished) return;
       while (next < items.length && inflight < limit && !shouldStop()) {
         const w = weight(items[next]);
-        if (inflight > 0 && weightNow + w > maxWeight) break; // wait for memory; a single huge item still runs alone
-        const i = next++; inflight++; weightNow += w;
+        if (b.used > 0 && b.used + w > maxWeight) break; // wait for memory; a single huge item still runs alone
+        const i = next++; inflight++; b.used += w;
         Promise.resolve().then(() => worker(items[i], i)).then(
           (r) => { results[i] = { ok: true, value: r }; },
           (e) => { results[i] = { ok: false, error: e }; },
-        ).then(() => { inflight--; weightNow -= w; pump(); });
+        ).then(() => { inflight--; b.used -= w; for (const p of [...b.pumps]) p(); });
       }
-      if (!inflight && (next >= items.length || shouldStop())) resolve(results);
+      if (!inflight && (next >= items.length || shouldStop())) { finished = true; b.pumps.delete(pump); resolve(results); }
     };
+    b.pumps.add(pump);
     pump();
   });
 }

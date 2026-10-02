@@ -283,6 +283,23 @@ export class SafRoot extends BaseRoot {
     return new File([bytes], basename(path), { lastModified: info.mtime || Date.now() });
   }
   async getFile(path) { return this.getFullFile(path); }
+  /** A file whose bytes are read only when asked for (slices), using the size from the latest listing / write. */
+  lazyFile(path) {
+    const x = this.ids.get(path); if (!x || x.size == null) return null;
+    return new SafFile(this, x.id, basename(path), x.size, x.mtime);
+  }
+  /** In-place patching is only used on the phone's own storage, where a write at an offset is known to behave. */
+  get canPatch() { return /^content:\/\/com\.android\.externalstorage\.documents\//.test(this.uri || ''); }
+  /** Overwrite byte ranges inside an existing file without changing its length. */
+  async writeAt(path, writes, expectedSize) {
+    const id = this.idOf(path);
+    for (const w of writes) {
+      const data = await bytesToB64(new Blob([w.bytes]), 0, w.bytes.length);
+      const r = await SafRoot.plugin.writeAt({ uri: this.uri, id, offset: w.offset, data });
+      if (r.after != null && expectedSize != null && Number(r.after) !== Number(expectedSize)) throw new Error('The storage provider changed the file size while patching it. Check this file.');
+    }
+    const cur = this.ids.get(path); if (cur) cur.mtime = Date.now();
+  }
   async readText(path) { return (await this.getFullFile(path)).text(); }
   async writeText(path, text) { return this.writeFile(path, new Blob([text], { type: 'application/json' })); }
   async writeFile(path, blob) {

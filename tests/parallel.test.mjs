@@ -8,8 +8,8 @@ import { buildPlan, executeOps, executeOpsParallel, opDependencies, reverseOps }
 import { MockRoot } from '../public/js/core/sources.js';
 import { makeRule, runPipeline } from '../public/js/renamer/rules.js';
 import { normaliseInterrupted } from '../public/js/core/manifest.js';
-import { startJob, cancelJob, activeFor, hasRunning, whenIdle, runPool, conflictFor } from '../public/js/core/jobs.js';
-import { readTags } from '../public/js/tagger/index.js';
+import { startJob, cancelJob, memoryBudget, activeFor, hasRunning, whenIdle, runPool, conflictFor } from '../public/js/core/jobs.js';
+import { readTags, writeTags, planMp3Patch } from '../public/js/tagger/index.js';
 import { writeTagsOffThread } from '../public/js/tagger/pool.js';
 
 let pass = 0;
@@ -226,6 +226,57 @@ await t('tags: 36 files saved at the same time each keep their own tags', async 
     assert.equal(String(parseInt(back.fields.track, 10)), String(j.i + 1), `file ${j.i} track number`);
     assert.equal(back.fields.album, `Album ${j.i % 3}`);
   }
+});
+
+// Applies a patch plan to a copy of the file bytes, like the phone does through its storage bridge.
+const applyPlan = (bytes, plan) => { const out = new Uint8Array(bytes); for (const w of plan.writes) out.set(w.bytes, w.offset); return out; };
+// A lazy file: only slices are ever read, and every read is counted (the point of the fast path is to read little).
+const lazyOf = (bytes, name, stats) => { const mk = (a, b) => ({ name, get size() { return b - a; }, slice: (x = 0, y = b - a) => mk(a + x, a + Math.min(y, b - a)), arrayBuffer: async () => { stats.read += b - a; return bytes.slice(a, b).buffer; } }); return mk(0, bytes.length); };
+
+await t('mp3 in-place patch: same bytes as a full rewrite, audio untouched, little data read', async () => {
+  const dir = new URL('./fixtures/', import.meta.url);
+  const orig = new File([readFileSync(new URL('t.mp3', dir))], 't.mp3');
+  // First give the file a roomy tag the normal way, like the first save does (1 KB padding).
+  const m0 = await readTags(orig); m0.fields.title = 'Old title'; m0.fields.artist = 'Old';
+  const { blob } = await writeTags(orig, m0, { id3Version: 3, id3v1: 'update' });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const f = new File([bytes], 't.mp3');
+  const m = await readTags(f); m.fields.title = 'Brand new title'; m.fields.artist = 'New Artist'; m.fields.track = '12'; m.fields.album = 'Alb';
+  const stats = { read: 0 };
+  const plan = await planMp3Patch(lazyOf(bytes, 't.mp3', stats), m, { id3Version: 3, id3v1: 'update' });
+  assert.ok(plan, 'a small edit must fit in the existing padding');
+  assert.ok(stats.read < 20000, `read ${stats.read} bytes, should be a small part of ${bytes.length}`);
+  const patched = applyPlan(bytes, plan);
+  assert.equal(patched.length, bytes.length, 'file length must not change');
+  const back = await readTags(new File([patched], 't.mp3'));
+  assert.equal(back.fields.title, 'Brand new title'); assert.equal(back.fields.artist, 'New Artist'); assert.equal(back.fields.track, '12');
+  // audio bytes (between the tag and the ID3v1 block) are identical
+  const tagLen = 10 + (((bytes[6] & 127) << 21) | ((bytes[7] & 127) << 14) | ((bytes[8] & 127) << 7) | (bytes[9] & 127));
+  assert.deepEqual(patched.slice(tagLen, bytes.length - 128), bytes.slice(tagLen, bytes.length - 128));
+  // and a huge edit (cover art + lyrics) does not fit: the planner says so instead of corrupting anything
+  const big = await readTags(f); big.fields.lyrics = 'la '.repeat(5000);
+  assert.equal(await planMp3Patch(lazyOf(bytes, 't.mp3', { read: 0 }), big, { id3Version: 3 }), null);
+});
+
+await t('two jobs on different folders run at the same time; the same folder is refused', async () => {
+  const a = new MockRoot(['x.txt']); const b = new MockRoot(['y.txt']);
+  const seen = { both: false }; let release; const gate = new Promise((r) => { release = r; });
+  const ja = startJob({ kind: 'rename', title: 'A', root: a, total: 1, run: async () => { await gate; return { status: 'done' }; } });
+  const jb = startJob({ kind: 'tags', title: 'B', root: b, total: 1, run: async () => { await gate; return { status: 'done' }; } });
+  seen.both = !!activeFor(a) && !!activeFor(b);
+  assert.ok(seen.both, 'both jobs should be running together');
+  assert.ok(await conflictFor(a), 'a second job on the same folder is refused');
+  assert.equal(await conflictFor(new MockRoot(['z.txt'])), null, 'another folder is free');
+  release(); await Promise.all([ja.promise, jb.promise]);
+  assert.ok(!hasRunning());
+});
+
+await t('jobs share one memory budget', async () => {
+  const w = 100; let live = 0; let peak = 0;
+  const run = () => runPool(Array.from({ length: 12 }, (_, i) => i), async () => { live += w; peak = Math.max(peak, live); await sleep(3); live -= w; }, { limit: 6, weight: () => w, maxWeight: 300, budget: memoryBudget });
+  await Promise.all([run(), run()]);
+  assert.ok(peak <= 300, `peak ${peak} should stay within the shared 300`);
+  assert.equal(memoryBudget.used, 0);
 });
 
 console.log(`parallel: ${pass} checks passed`);

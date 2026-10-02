@@ -59,3 +59,12 @@ What changed and why
 5. Android speed. Saving tags listed the whole parent folder for every file (slow in big folders) - now the
    size comes from the first listing. Native read/write/rename/delete run on a 4-thread pool (Capacitor
    otherwise runs them one at a time), and Android folders use 4 parallel files instead of 2.
+
+6. Much faster tag saves on Android, and several jobs at once.
+   - MP3 fast path (tagger/index.js planMp3Patch, SafRoot.writeAt, FoldersPlugin.writeAt): when the edited tag
+     fits in the space of the old tag + padding, only that part (a few KB) is read and overwritten in place;
+     the song is no longer copied through the storage bridge twice. Used only on the phone's own storage and
+     checked for unchanged file size. Bigger edits (new cover art, long lyrics) use the normal full rewrite.
+   - Jobs on different folders run at the same time (rename + tag save, or several renames). The same folder
+     is still refused. All jobs share one memory budget (core/jobs.js memoryBudget).
+   - Android: up to 6 files in parallel for tags.
