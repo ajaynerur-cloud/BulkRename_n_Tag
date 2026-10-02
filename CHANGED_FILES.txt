@@ -55,3 +55,7 @@ What changed and why
    - Android: foreground service (KeepAliveService.java, plugin methods, manifest entries in prepare.mjs).
      Not compiled in this environment: build the APK once to confirm.
    - Tests: tests/parallel.test.mjs. Service worker precache list updated.
+
+5. Android speed. Saving tags listed the whole parent folder for every file (slow in big folders) - now the
+   size comes from the first listing. Native read/write/rename/delete run on a 4-thread pool (Capacitor
+   otherwise runs them one at a time), and Android folders use 4 parallel files instead of 2.
