@@ -44,11 +44,14 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # Only platform-tools: Google removed the legacy 'tools' package that this action requests by default.
-      # The Android Gradle plugin downloads the SDK platform and build-tools it needs by itself.
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
+      # No extra setup action needed: GitHub's ubuntu-latest runners already ship the Android SDK
+      # (ANDROID_HOME, cmdline-tools, platform-tools, build-tools). The Android Gradle plugin downloads
+      # the platform and build-tools it needs; this step only makes sure the SDK licences are accepted so
+      # that download is allowed.
+      - name: Accept Android SDK licences
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Check web app
         run: node scripts/check.mjs
