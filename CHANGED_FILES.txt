@@ -68,3 +68,11 @@ What changed and why
    - Jobs on different folders run at the same time (rename + tag save, or several renames). The same folder
      is still refused. All jobs share one memory budget (core/jobs.js memoryBudget).
    - Android: up to 6 files in parallel for tags.
+
+7. Folders in the lists (Renamer preview and Tag editor).
+   - With 2+ folders open, each folder gets a header: checkbox for the whole folder (partly-filled when some
+     files are ticked), collapse arrow, file count, changed/renamed count. Tag editor: Edit folder button and
+     a Saving / Waiting / Saved chip.
+   - Tag editor Save now writes the changed files among the ticked ones (all changed files if none ticked).
+   - A multi-folder tag save shows one progress bar per folder on the job card; files are taken from all
+     folders in turn so folders progress together. (core/groups.js, core/group-utils.js, core/jobs.js parts.)
