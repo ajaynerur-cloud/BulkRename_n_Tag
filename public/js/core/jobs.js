@@ -38,6 +38,7 @@ export async function sameSource(a, b) {
   if (a === b) return true;
   if (a.kind !== b.kind) return false;
   try {
+    if (a.isNative || b.isNative) return !!(a.isNative && b.isNative && a.overlaps(b));
     if (a.isSaf || b.isSaf) return !!(a.isSaf && b.isSaf && a.uri === b.uri);
     const ha = a.handle || a.fileHandle; const hb = b.handle || b.fileHandle;
     if (ha?.isSameEntry && hb) return await ha.isSameEntry(hb);

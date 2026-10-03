@@ -3,6 +3,10 @@ package app.nametag;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.content.Intent;
 import android.content.UriPermission;
 import android.database.Cursor;
@@ -24,6 +28,8 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.RandomAccessFile;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -298,6 +304,174 @@ public class FoldersPlugin extends Plugin {
     @PluginMethod public void updateKeepAlive(PluginCall call) { keepAlive(call, true); }
 
     @PluginMethod public void stopKeepAlive(PluginCall call) { keepAlive(call, false); }
+
+    /* ================================================================ direct file access ("All files access")
+     * Used by the in-app file browser: whole internal storage and SD cards as plain paths, so several folders and
+     * files can be picked at once and read / renamed / written without going through the document provider. */
+
+    private boolean hasAllFiles() {
+        Context c = getContext();
+        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
+        return c.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @PluginMethod
+    public void storageAccess(PluginCall call) {
+        JSObject r = new JSObject(); r.put("granted", hasAllFiles()); r.put("sdk", Build.VERSION.SDK_INT); call.resolve(r);
+    }
+
+    /** Opens the system screen where the person switches "All files access" on for this app (a normal permission prompt before Android 11). */
+    @PluginMethod
+    public void requestStorageAccess(PluginCall call) {
+        try {
+            Context c = getContext();
+            if (Build.VERSION.SDK_INT >= 30) {
+                Intent i = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + c.getPackageName()));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try { c.startActivity(i); }
+                catch (Exception e) { Intent j = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION); j.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); c.startActivity(j); }
+            } else {
+                androidx.core.app.ActivityCompat.requestPermissions(getActivity(), new String[] { android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE }, 9001);
+            }
+            call.resolve();
+        } catch (Exception e) { call.reject("Could not open the permission screen: " + e.getMessage(), e); }
+    }
+
+    /** Storage volumes: internal storage first, then SD cards / USB drives that are mounted. */
+    @PluginMethod
+    public void fsRoots(PluginCall call) {
+        try {
+            JSArray arr = new JSArray();
+            File internal = Environment.getExternalStorageDirectory();
+            JSObject a = new JSObject(); a.put("name", "Internal storage"); a.put("path", internal.getAbsolutePath()); arr.put(a);
+            File[] dirs = getContext().getExternalFilesDirs(null);
+            if (dirs != null) for (File d : dirs) {
+                if (d == null) continue;
+                String p = d.getAbsolutePath(); int k = p.indexOf("/Android/data");
+                if (k <= 0) continue;
+                String root = p.substring(0, k);
+                if (root.equals(internal.getAbsolutePath())) continue;
+                JSObject o = new JSObject(); o.put("name", new File(root).getName().isEmpty() ? "SD card" : "SD card (" + new File(root).getName() + ")"); o.put("path", root); arr.put(o);
+            }
+            JSObject r = new JSObject(); r.put("roots", arr); call.resolve(r);
+        } catch (Exception e) { call.reject("Could not list storage: " + e.getMessage(), e); }
+    }
+
+    private static JSObject fileInfo(File f, String relPath) {
+        JSObject o = new JSObject();
+        o.put("name", f.getName()); o.put("isDir", f.isDirectory());
+        o.put("size", f.isDirectory() ? 0 : f.length()); o.put("mtime", f.lastModified());
+        if (relPath != null) o.put("path", relPath);
+        return o;
+    }
+
+    /** One folder level, folders first. */
+    @PluginMethod
+    public void fsList(PluginCall call) { POOL.execute(() -> fsListImpl(call)); }
+    private void fsListImpl(PluginCall call) {
+        try {
+            File dir = new File(call.getString("path", ""));
+            File[] kids = dir.listFiles();
+            JSArray arr = new JSArray();
+            if (kids != null) for (File k : kids) arr.put(fileInfo(k, null));
+            JSObject r = new JSObject(); r.put("entries", arr); r.put("readable", kids != null); call.resolve(r);
+        } catch (Exception e) { call.reject("Could not list the folder: " + e.getMessage(), e); }
+    }
+
+    /** Everything below a folder, with paths relative to it. */
+    @PluginMethod
+    public void fsListAll(PluginCall call) { POOL.execute(() -> fsListAllImpl(call)); }
+    private void fsListAllImpl(PluginCall call) {
+        try {
+            File base = new File(call.getString("path", ""));
+            JSArray arr = new JSArray();
+            ArrayDeque<File> q = new ArrayDeque<>(); ArrayDeque<String> qp = new ArrayDeque<>();
+            q.add(base); qp.add("");
+            while (!q.isEmpty()) {
+                File dir = q.poll(); String prefix = qp.poll();
+                File[] kids = dir.listFiles();
+                if (kids == null) continue;
+                for (File k : kids) {
+                    String rel = prefix.isEmpty() ? k.getName() : prefix + "/" + k.getName();
+                    arr.put(fileInfo(k, rel));
+                    if (k.isDirectory()) { q.add(k); qp.add(rel); }
+                }
+            }
+            JSObject r = new JSObject(); r.put("entries", arr); call.resolve(r);
+        } catch (Exception e) { call.reject("Could not list the folder: " + e.getMessage(), e); }
+    }
+
+    @PluginMethod
+    public void fsStat(PluginCall call) {
+        try {
+            File f = new File(call.getString("path", ""));
+            JSObject r = new JSObject(); r.put("exists", f.exists()); r.put("isDir", f.isDirectory()); r.put("size", f.length()); r.put("mtime", f.lastModified());
+            call.resolve(r);
+        } catch (Exception e) { call.reject("Could not read file information: " + e.getMessage(), e); }
+    }
+
+    @PluginMethod
+    public void fsRead(PluginCall call) { POOL.execute(() -> fsReadImpl(call)); }
+    private void fsReadImpl(PluginCall call) {
+        try (RandomAccessFile raf = new RandomAccessFile(new File(call.getString("path", "")), "r")) {
+            long offset = call.getData().optLong("offset", 0);
+            long length = call.getData().optLong("length", -1);
+            long avail = Math.max(0, raf.length() - offset);
+            int n = (int) (length < 0 ? Math.min(avail, 64L * 1024 * 1024) : Math.min(avail, length));
+            byte[] buf = new byte[n];
+            raf.seek(offset); raf.readFully(buf);
+            JSObject r = new JSObject(); r.put("data", Base64.encodeToString(buf, Base64.NO_WRAP)); call.resolve(r);
+        } catch (Exception e) { call.reject("Could not read the file: " + e.getMessage(), e); }
+    }
+
+    /** Writes base64 data; creates missing folders. append=false replaces the file. */
+    @PluginMethod
+    public void fsWrite(PluginCall call) { POOL.execute(() -> fsWriteImpl(call)); }
+    private void fsWriteImpl(PluginCall call) {
+        try {
+            File f = new File(call.getString("path", ""));
+            File parent = f.getParentFile(); if (parent != null && !parent.exists()) parent.mkdirs();
+            byte[] data = Base64.decode(call.getString("data", ""), Base64.DEFAULT);
+            try (java.io.FileOutputStream os = new java.io.FileOutputStream(f, call.getBoolean("append", false))) { os.write(data); }
+            call.resolve();
+        } catch (Exception e) { call.reject("Could not write the file: " + e.getMessage(), e); }
+    }
+
+    /** Overwrites bytes at an offset without changing the file length. */
+    @PluginMethod
+    public void fsWriteAt(PluginCall call) { POOL.execute(() -> fsWriteAtImpl(call)); }
+    private void fsWriteAtImpl(PluginCall call) {
+        try (RandomAccessFile raf = new RandomAccessFile(new File(call.getString("path", "")), "rw")) {
+            long before = raf.length();
+            byte[] data = Base64.decode(call.getString("data", ""), Base64.DEFAULT);
+            raf.seek(call.getData().optLong("offset", 0)); raf.write(data);
+            JSObject r = new JSObject(); r.put("before", before); r.put("after", raf.length()); call.resolve(r);
+        } catch (Exception e) { call.reject("Could not patch the file: " + e.getMessage(), e); }
+    }
+
+    /** Renames or moves. Refuses to replace an existing item (a case-only change of the same name is fine). */
+    @PluginMethod
+    public void fsRename(PluginCall call) { POOL.execute(() -> fsRenameImpl(call)); }
+    private void fsRenameImpl(PluginCall call) {
+        try {
+            File from = new File(call.getString("from", "")); File to = new File(call.getString("to", ""));
+            if (!from.exists()) throw new IllegalStateException("Not found: " + from.getName());
+            boolean caseOnly = from.getParentFile() != null && from.getParentFile().equals(to.getParentFile()) && from.getName().equalsIgnoreCase(to.getName());
+            if (to.exists() && !caseOnly) throw new IllegalStateException("\"" + to.getName() + "\" already exists");
+            File parent = to.getParentFile(); if (parent != null && !parent.exists()) parent.mkdirs();
+            if (!from.renameTo(to)) throw new IllegalStateException("Android refused to rename \"" + from.getName() + "\"");
+            call.resolve();
+        } catch (Exception e) { call.reject("Rename failed: " + e.getMessage(), e); }
+    }
+
+    @PluginMethod
+    public void fsDelete(PluginCall call) { POOL.execute(() -> fsDeleteImpl(call)); }
+    private void fsDeleteImpl(PluginCall call) {
+        try {
+            File f = new File(call.getString("path", ""));
+            JSObject r = new JSObject(); r.put("deleted", f.delete()); call.resolve(r);
+        } catch (Exception e) { call.reject("Delete failed: " + e.getMessage(), e); }
+    }
 
     private static String mimeFor(String name) {
         int dot = name == null ? -1 : name.lastIndexOf('.');

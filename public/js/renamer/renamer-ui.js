@@ -74,7 +74,7 @@ function segmented(options, get, set, label) {
 function renderSource() {
   const bar = S.el.querySelector('#rn-source');
   clear(bar);
-  if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }));
+  if (support.folderPicker) bar.append(btn(support.nativeBrowser ? 'Pick folders & files' : 'Open folder', () => openFolder(), { cls: 'btn-primary', ic: 'folder-open' }));
   // No real folder picker here (most Android browsers): "import a folder" is the only way to bring
   // one in at all, so it gets a real, visible button instead of hiding inside the "more" menu, where
   // it reads as "the folder won't open" rather than "there's another way to open it".
@@ -535,7 +535,7 @@ function renderFolder(el, it) {
   const included = rows.filter((r) => !S.excluded.has(r.e.path)).length;
   const renamed = rows.filter((r) => !S.excluded.has(r.e.path) && r.newName !== r.e.name && r.status !== 'invalid' && r.status !== 'conflict').length;
   renderFolderHead(el, {
-    label: it.dir || S.root?.name || 'This folder', title: it.dir || S.root?.name, total: rows.length, sel: included,
+    label: it.dir || (S.root?.isNative && !S.root.single ? 'Picked files' : S.root?.name) || 'This folder', title: it.dir || S.root?.name, total: rows.length, sel: included,
     changedLabel: renamed ? `${renamed.toLocaleString('en-US')} renamed` : '',
     collapsed: S.collapsed.has(it.dir),
     onToggle: () => { if (S.collapsed.has(it.dir)) S.collapsed.delete(it.dir); else S.collapsed.add(it.dir); rebuildItems(); },

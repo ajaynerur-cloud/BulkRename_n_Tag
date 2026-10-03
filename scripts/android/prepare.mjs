@@ -38,6 +38,8 @@ edit('src/main/AndroidManifest.xml', (s) => {
   let x = s;
   if (!x.includes('WRITE_EXTERNAL_STORAGE')) x = need(x, '<uses-permission android:name="android.permission.INTERNET" />',
     '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+  if (!x.includes('MANAGE_EXTERNAL_STORAGE')) x = need(x, '<uses-permission android:name="android.permission.INTERNET" />',
+    '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />');
   if (!x.includes('FOREGROUND_SERVICE')) x = need(x, '<uses-permission android:name="android.permission.INTERNET" />',
     '<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
   if (!x.includes('KeepAliveService')) x = need(x, '</application>', '    <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync" />\n    </application>');

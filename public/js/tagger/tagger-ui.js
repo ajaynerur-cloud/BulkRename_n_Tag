@@ -56,7 +56,7 @@ function renderSource() {
   const bar = T.el.querySelector('#tg-source');
   clear(bar);
   if (support.filePicker) bar.append(btn('Open files', () => openFiles(), { cls: 'btn-primary', ic: 'file-music' }));
-  if (support.folderPicker) bar.append(btn('Open folder', () => openFolder(), { ic: 'folder-open' }));
+  if (support.folderPicker) bar.append(btn(support.nativeBrowser ? 'Pick folders & files' : 'Open folder', () => openFolder(), { ic: 'folder-open', cls: support.nativeBrowser ? 'btn-primary' : '' }));
   if (!support.filePicker) bar.append(btn('Import files', () => importFiles(false), { cls: 'btn-primary', ic: 'upload' }));
   // Same as the renamer: without a real folder picker (most Android browsers), folder import is the
   // only way in, so give it a visible button instead of burying it in the "more" menu.
@@ -85,7 +85,7 @@ function renderSource() {
 /* ------------------------------------------------------------------ sources */
 async function openFiles() { try { await setRoot(await FilesRoot.pick()); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); } }
 async function openFolder() {
-  try { const r = await pickFolderRoot(); if (!(await r.verifyPermission(true))) return; await setRoot(r); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
+  try { const r = await pickFolderRoot({ audioOnly: true }); if (!(await r.verifyPermission(true))) return; await setRoot(r); } catch (e) { if (e.name !== 'AbortError') toast(e.message, { type: 'error' }); }
 }
 async function openZip() {
   try {
@@ -230,7 +230,7 @@ const repaintSoon = () => { if (!repaintTimer) repaintTimer = setTimeout(() => {
 
 function renderFolder(el, it) {
   const idx = it.pos.map((p) => T.view[p]);
-  const label = it.dir || T.root?.name || 'This folder';
+  const label = it.dir || (T.root?.isNative && !T.root.single ? 'Picked files' : T.root?.name) || 'This folder';
   renderFolderHead(el, {
     label, title: it.dir || label, total: idx.length, sel: idx.filter((i) => T.sel.has(i)).length,
     changedLabel: (() => { const n = idx.filter((i) => T.rows[i].dirty).length; return n ? `${n.toLocaleString('en-US')} changed` : ''; })(),

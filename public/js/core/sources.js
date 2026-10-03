@@ -17,13 +17,22 @@ export const support = {
   get saveFilePicker() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; },
   get handleMove() { return typeof FileSystemHandle !== 'undefined' && 'move' in FileSystemHandle.prototype; },
   /** Android app: native folder picker (Storage Access Framework) through the NameTagFolders plugin. */
+  /** Android app with the direct-file plugin: the in-app browser where several folders and files can be ticked. */
+  get nativeBrowser() { return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.() && typeof window.Capacitor?.Plugins?.NameTagFolders?.fsList === 'function'; },
   get safPicker() { return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.() && !!window.Capacitor?.Plugins?.NameTagFolders; },
   /** Any way to open a real folder for in-place changes. */
-  get folderPicker() { return this.dirPicker || this.safPicker; },
+  get folderPicker() { return this.dirPicker || this.safPicker || this.nativeBrowser; },
 };
 
 /** Opens a real folder with the platform's own picker: Android's system folder picker in the app, the browser's elsewhere. */
-export async function pickFolderRoot() {
+export async function pickFolderRoot(opts = {}) {
+  if (support.nativeBrowser) {
+    const { pickNativeRoot } = await import('./browser-ui.js');
+    const r = await pickNativeRoot(opts);
+    if (r === 'saf') return SafRoot.pick(); // person chose Android's single-folder picker instead
+    if (!r) { const e = new Error('cancelled'); e.name = 'AbortError'; throw e; }
+    return r;
+  }
   if (support.safPicker) return SafRoot.pick();
   const r = await DirRoot.pick();
   return r;
@@ -317,6 +326,193 @@ export class SafRoot extends BaseRoot {
   }
   async remove(path) { await SafRoot.plugin.delete({ uri: this.uri, id: this.idOf(path) }); this.ids.delete(path); }
   async finalize() { return { saved: true, message: 'Changes were written directly to the folder.' }; }
+}
+
+/* ------------------------------------------------------------------ Android: any mix of folders and files (All files access) */
+/** File-like view of a file on storage that reads only the ranges asked for. */
+class NativeFile {
+  constructor(root, abs, name, size, mtime, start = 0, end = size) { Object.assign(this, { root, abs, name, lastModified: mtime || Date.now(), start, end, type: '', total: size }); }
+  get size() { return Math.max(0, this.end - this.start); }
+  slice(a = 0, b = this.size) {
+    const n = this.size; const norm = (x) => (x < 0 ? Math.max(0, n + x) : Math.min(n, x));
+    const s0 = norm(a); const e0 = Math.max(s0, norm(b));
+    return new NativeFile(this.root, this.abs, this.name, this.total, this.lastModified, this.start + s0, this.start + e0);
+  }
+  async arrayBuffer() { return (await this.root._readAbs(this.abs, this.start, this.size, this.total)).buffer; }
+  async text() { return new TextDecoder().decode(await this.arrayBuffer()); }
+}
+
+const parentOf = (p) => p.slice(0, Math.max(0, p.lastIndexOf('/')));
+const nameOf = (p) => p.slice(p.lastIndexOf('/') + 1);
+
+/**
+ * A set of folders and files picked in the in-app browser, presented as one source. Exactly one folder is
+ * shown as that folder (paths relative to it). Anything else is shown side by side: each picked folder or file
+ * is a top-level item named after itself, and undo / backup files are written next to the picked items (their
+ * common parent folder). Files are read and renamed directly, which is much quicker than the document provider.
+ */
+export class NativeRoot extends BaseRoot {
+  constructor({ items, name }) {
+    super('dir', name || 'Selection');
+    this.items = items.map((i) => ({ path: i.path.replace(/\/+$/, ''), isDir: !!i.isDir }));
+    this.handle = { native: true, items: this.items, name: this.name };
+    this.canRenameInPlace = true; this.allowCopyFallback = false; this.isNative = true;
+    this.single = this.items.length === 1 && this.items[0].isDir;
+    this.meta = new Map(); // virtual path -> { size, mtime }
+    if (this.single) { this.base = this.items[0].path; this.home = this.base; if (!name) this.name = nameOf(this.base) || 'Folder'; }
+    else {
+      this.tops = new Map();
+      for (const it of this.items) {
+        let n = nameOf(it.path) || 'Item'; let k = 2;
+        const dot = n.lastIndexOf('.'); const stem = it.isDir || dot <= 0 ? n : n.slice(0, dot); const ext = it.isDir || dot <= 0 ? '' : n.slice(dot);
+        while (this.tops.has(n)) n = `${stem} (${k++})${ext}`;
+        this.tops.set(n, { abs: it.path, isDir: it.isDir });
+      }
+      const parents = this.items.map((i) => parentOf(i.path).split('/'));
+      let common = parents[0]; for (const p of parents) { let j = 0; while (j < common.length && j < p.length && common[j] === p[j]) j++; common = common.slice(0, j); }
+      this.home = common.join('/') || '/';
+      if (!name) { const f = this.items.filter((i) => !i.isDir).length; const d = this.items.length - f; this.name = [d ? `${d} folder${d > 1 ? 's' : ''}` : '', f ? `${f} file${f > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + '); }
+    }
+  }
+  get maxConcurrency() { return 6; }
+  get canPatch() { return true; }
+  static get plugin() { return window.Capacitor.Plugins.NameTagFolders; }
+
+  /** Do the two selections share any file (one contains the other, or they are the same)? */
+  overlaps(o) {
+    const inside = (a, b) => a === b || a.startsWith(`${b}/`);
+    return this.items.some((a) => o.items.some((b) => inside(a.path, b.path) || inside(b.path, a.path)));
+  }
+  async verifyPermission() {
+    try { if ((await NativeRoot.plugin.storageAccess()).granted) return true; } catch { return false; }
+    const err = new Error('NameTag needs "All files access". Open the folder picker again and allow it.'); err.name = 'NotAllowedError'; throw err;
+  }
+  /** Real path on storage for a path inside this source. */
+  abs(path) {
+    if (this.single) return path ? `${this.base}/${path}` : this.base;
+    if (!path) return this.home;
+    const i = path.indexOf('/'); const top = i < 0 ? path : path.slice(0, i);
+    const t = this.tops.get(top);
+    if (!t) return `${this.home === '/' ? '' : this.home}/${path}`; // undo / backup files live next to the picked items
+    return i < 0 ? t.abs : t.abs + path.slice(i);
+  }
+  async _readAbs(abs, offset, length, total) {
+    const P = NativeRoot.plugin;
+    // Whole files come straight from the web view's file server when it allows it: no base64 round trip.
+    if (!NativeRoot.noFastRead && total != null && offset === 0 && length === total && total > 65536 && window.Capacitor?.convertFileSrc) {
+      try {
+        const r = await fetch(window.Capacitor.convertFileSrc(`file://${encodeURI(abs)}`));
+        if (r.ok) { const b = new Uint8Array(await r.arrayBuffer()); if (b.length === total) return b; }
+        NativeRoot.noFastRead = true;
+      } catch { NativeRoot.noFastRead = true; }
+    }
+    const parts = []; let got = 0;
+    while (got < length) {
+      const n = Math.min(SAF_CHUNK, length - got);
+      const r = await P.fsRead({ path: abs, offset: offset + got, length: n });
+      const b = b64ToBytes(r.data || ''); parts.push(b); got += b.length;
+      if (b.length < n) break;
+    }
+    if (parts.length === 1) return parts[0];
+    const out = new Uint8Array(got); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+  async list({ recursive = true, includeHidden = false, includeTemp = false, onProgress } = {}) {
+    const P = NativeRoot.plugin;
+    const out = []; this.manifests = []; this.meta.clear();
+    const emit = (path, e, depth) => {
+      if (e.isDir) { out.push({ path, name: e.name, isDir: true, depth }); return; }
+      this.meta.set(path, { size: e.size, mtime: e.mtime });
+      out.push({ path, name: e.name, isDir: false, depth, size: e.size, mtime: e.mtime, getFile: async () => this.lazyFile(path) });
+    };
+    const skipped = new Set();
+    const visit = (path, e) => {
+      const parent = dirname(path);
+      if (parent && skipped.has(parent)) { if (e.isDir) skipped.add(path); return; }
+      const acc = this._accept(e.name, { includeHidden, includeTemp });
+      if (acc === 'manifest' && !e.isDir) { this.manifests.push({ path, name: e.name, getFile: () => this.getFullFile(path) }); return; }
+      if (!acc) { if (e.isDir) skipped.add(path); return; }
+      emit(path, e, path.split('/').length - 1);
+    };
+    const walkDir = async (absDir, prefix) => {
+      const r = await P.fsListAll({ path: absDir });
+      const all = (r.entries || []).sort((a, b) => a.path.length - b.path.length);
+      for (const e of all) { if (!recursive && e.path.includes('/')) continue; visit(prefix ? `${prefix}/${e.path}` : e.path, e); }
+    };
+    if (this.single) await walkDir(this.base, '');
+    else {
+      for (const [vname, t] of this.tops) {
+        const st = await P.fsStat({ path: t.abs });
+        if (!st.exists) continue;
+        visit(vname, { name: vname, isDir: t.isDir, size: st.size, mtime: st.mtime });
+        if (t.isDir && recursive) await walkDir(t.abs, vname);
+      }
+      // undo / backup files made earlier sit in the common parent folder
+      try {
+        for (const e of (await P.fsList({ path: this.home })).entries || []) if (!e.isDir && MANIFEST_RE.test(e.name) && !this.tops.has(e.name)) this.manifests.push({ path: e.name, name: e.name, getFile: () => this.getFullFile(e.name) });
+      } catch { /* not readable */ }
+    }
+    onProgress?.(out.length);
+    return sortEntries(out);
+  }
+  async listNames(dirPath) {
+    if (!this.single && !dirPath) return [...this.tops.keys()];
+    return ((await NativeRoot.plugin.fsList({ path: this.abs(dirPath) })).entries || []).map((e) => e.name);
+  }
+  async exists(path) { try { return !!(await NativeRoot.plugin.fsStat({ path: this.abs(path) })).exists; } catch { return false; } }
+  async isDirectory(path) { if (!path) return true; try { return !!(await NativeRoot.plugin.fsStat({ path: this.abs(path) })).isDir; } catch { return false; } }
+  async move(from, to) {
+    const P = NativeRoot.plugin;
+    const topMove = !this.single && !from.includes('/');
+    if (topMove && to.includes('/')) throw new Error('Moving a picked item into another folder is not supported.');
+    const fromAbs = this.abs(from);
+    const toAbs = topMove ? `${parentOf(fromAbs)}/${to}` : this.abs(to);
+    await P.fsRename({ from: fromAbs, to: toAbs });
+    if (topMove) { const t = this.tops.get(from); this.tops.delete(from); this.tops.set(to, { ...t, abs: toAbs }); const m = this.meta.get(from); if (m) { this.meta.delete(from); this.meta.set(to, m); } }
+    else if (this.meta.has(from)) { this.meta.set(to, this.meta.get(from)); this.meta.delete(from); }
+  }
+  async getFullFile(path) {
+    const abs = this.abs(path);
+    let m = this.meta.get(path);
+    if (!m) { const st = await NativeRoot.plugin.fsStat({ path: abs }); m = { size: st.size, mtime: st.mtime }; }
+    const bytes = await this._readAbs(abs, 0, m.size, m.size);
+    return new File([bytes], basename(path), { lastModified: m.mtime || Date.now() });
+  }
+  async getFile(path) { return this.getFullFile(path); }
+  /** Lazy file using the size from the last listing / write. */
+  lazyFile(path) {
+    let m = this.meta.get(path);
+    if (!m) return null;
+    return new NativeFile(this, this.abs(path), basename(path), m.size, m.mtime);
+  }
+  async readText(path) { return (await this.getFullFile(path)).text(); }
+  async writeText(path, text) { return this.writeFile(path, new Blob([text], { type: 'application/json' })); }
+  async writeFile(path, blob) {
+    const abs = this.abs(path);
+    for (let pos = 0, first = true; first || pos < blob.size; pos += SAF_CHUNK, first = false) {
+      const data = await bytesToB64(blob, pos, Math.min(blob.size, pos + SAF_CHUNK));
+      await NativeRoot.plugin.fsWrite({ path: abs, data, append: !first });
+    }
+    const m = this.meta.get(path); if (m) { m.size = blob.size; m.mtime = Date.now(); }
+  }
+  async writeAt(path, writes, expectedSize) {
+    const abs = this.abs(path);
+    for (const w of writes) {
+      const data = await bytesToB64(new Blob([w.bytes]), 0, w.bytes.length);
+      const r = await NativeRoot.plugin.fsWriteAt({ path: abs, offset: w.offset, data });
+      if (r.after != null && expectedSize != null && Number(r.after) !== Number(expectedSize)) throw new Error('The file size changed while patching it. Check this file.');
+    }
+    const m = this.meta.get(path); if (m) m.mtime = Date.now();
+  }
+  async remove(path) { await NativeRoot.plugin.fsDelete({ path: this.abs(path) }); this.meta.delete(path); }
+  async finalize() { return { saved: true, message: 'Changes were written directly to the folders.' }; }
+}
+
+/** Re-create a source from what History stored. */
+export function rootFromHandle(handle) {
+  if (handle.native) return new NativeRoot(handle);
+  if (handle.saf) return new SafRoot(handle);
+  return new DirRoot(handle);
 }
 
 /* ------------------------------------------------------------------ ZIP (JSZip) */

@@ -1,7 +1,7 @@
 // App shell: routing, theme, service worker updates, install prompt, drag and drop, and the History view.
 import { h, icon, btn, clear, toast, confirmDialog, download, isNativeApp } from './core/ui.js';
 import { formatDate } from './core/utils.js';
-import { DirRoot, SafRoot, support } from './core/sources.js';
+import { rootFromHandle, support } from './core/sources.js';
 import { summarizeManifest } from './core/manifest.js';
 import { listHistory, deleteHistory, clearHistory } from './core/history.js';
 import { mountJobTray } from './core/jobs-ui.js';
@@ -148,7 +148,7 @@ async function renderHistory() {
 /** Re-open the folder and finish a rename that was interrupted (app closed, phone locked, error). */
 async function resumeFromHistory(rec) {
   try {
-    const root = rec.handle.saf ? new SafRoot(rec.handle) : new DirRoot(rec.handle);
+    const root = rootFromHandle(rec.handle);
     if (!(await root.verifyPermission(true))) { toast('Permission was not granted for that folder.', { type: 'warn' }); return; }
     await root.list({ recursive: true, includeHidden: true, includeTemp: true, withFiles: false }); // finds the undo files inside
     const f = root.manifests.find((m) => m.name === rec.manifestName);
@@ -160,9 +160,9 @@ async function resumeFromHistory(rec) {
 }
 
 async function restoreFromHistory(rec) {
-  const canReopen = rec.handle && rec.source === 'dir' && (rec.handle.saf ? support.safPicker : support.dirPicker);
+  const canReopen = rec.handle && rec.source === 'dir' && (rec.handle.native ? support.nativeBrowser : rec.handle.saf ? support.safPicker : support.dirPicker);
   if (canReopen) {
-    const root = rec.handle.saf ? new SafRoot(rec.handle) : new DirRoot(rec.handle);
+    const root = rootFromHandle(rec.handle);
     let ok = false;
     try { ok = await root.verifyPermission(true); } catch { ok = false; }
     if (ok) {
