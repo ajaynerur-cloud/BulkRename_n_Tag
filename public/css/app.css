@@ -760,3 +760,36 @@ html.is-native-app #install-btn { display: none !important; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 @media print { .app-head, .actionbar, #toasts, .tabs-main { display: none; } body { padding-left: 0; } }
+
+/* ---- folder groups in the file lists, and per-folder bars on the job card ---- */
+.vrow.fhead { display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--panel-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line-2); }
+.vrow.fhead.is-sel { background: var(--primary-soft); }
+.fhead .fchev { border: 0; background: none; color: var(--muted); display: grid; place-items: center; padding: 6px; margin: -6px 0; cursor: pointer; flex: none; border-radius: 8px; }
+.fhead .fchev:hover { color: var(--ink); background: var(--bg-2); }
+.fhead .ficon { color: var(--primary); display: grid; flex: none; }
+.fhead .fname { font-weight: 700; font-size: 0.9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.fhead .fmeta { color: var(--muted); font-size: 0.82rem; flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fhead .fmeta b { color: var(--ink-2); }
+.fhead .fedit { flex: none; }
+.fchip { font-size: 0.74rem; font-weight: 700; border-radius: 99px; padding: 3px 9px; background: var(--bg-2); color: var(--muted); white-space: nowrap; flex: none; }
+.fchip.is-run { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-line); }
+.fchip.is-ok { background: var(--ok-soft); color: var(--ok); }
+.fchip.is-bad { background: var(--bad-soft); color: var(--bad); }
+.gjobs { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.gjobs:empty { display: none; }
+.gj { display: grid; grid-template-columns: minmax(0, 10rem) 1fr auto; gap: 10px; align-items: center; font-size: 0.82rem; }
+.gj span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gj i { height: 6px; border-radius: 9px; background: var(--bg-2); overflow: hidden; display: block; }
+.gj b { display: block; height: 100%; background: var(--primary); border-radius: 9px; }
+.gj em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gj-sum { font-size: 0.8rem; color: var(--muted); margin: 0; }
+@media (max-width: 767px) {
+  .vrow.fhead { gap: 8px; padding: 0 10px; }
+  .fhead .fedit { padding: 6px 8px; }
+  .fhead .fedit span { display: none; }
+  .fhead .fchip { display: none; }
+  .gj { grid-template-columns: minmax(0, 6.5rem) 1fr auto; }
+}
+
+.tagbench.is-grouped .trow { padding-left: 34px; }
+.is-grouped-list .prow { padding-left: 34px; }

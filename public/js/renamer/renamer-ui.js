@@ -3,6 +3,7 @@ import { isCompact, rowHeightFor, h, icon, btn, clear, toast, openDialog, confir
 import { dirname, basename, splitName, naturalCompare, diffChars, debounce, formatBytes, formatDate } from '../core/utils.js';
 import { DirRoot, pickFolderRoot, ZipRoot, MemRoot, support, filesFromDataTransfer } from '../core/sources.js';
 import { buildPlan, executeOpsParallel, reverseOps, simulateOps } from '../core/planner.js';
+import { buildItems, renderFolderHead } from '../core/groups.js';
 import { startJob, activeFor, conflictFor, onJobs } from '../core/jobs.js';
 import { createRenameManifest, manifestFileName, parseManifest, summarizeManifest, normaliseInterrupted } from '../core/manifest.js';
 import { addHistory, updateHistory } from '../core/history.js';
@@ -24,7 +25,7 @@ const DEFAULT_OPTS = {
 
 const S = {
   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
-  excluded: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
+  excluded: new Set(), items: [], grouped: false, collapsed: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
   analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
 };
 try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
@@ -154,7 +155,7 @@ export const getRoot = () => S.root;
 
 async function setRoot(root, { keepMode = false } = {}) {
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) { toast('Write permission is needed to rename files in this folder.', { type: 'warn' }); return; }
-  S.root = root; S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
+  S.root = root; S.collapsed.clear(); S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
   if (!keepMode && S.mode === 'restore' && !S.pending) S.mode = 'rename';
   await scan();
   if (S.pending) {
@@ -514,11 +515,32 @@ function filterRows() {
   const q = S.search.trim().toLowerCase();
   S.visible = S.rows.filter((r) => (!S.opts.changedOnly || r.newName !== r.e.name || r.status === 'invalid' || r.status === 'conflict' || r.status === 'excluded')
     && (!q || r.e.name.toLowerCase().includes(q) || r.newName.toLowerCase().includes(q)));
-  S.list?.setCount(S.visible.length);
+  rebuildItems();
   paintEmpty();
   paintBar();
   const all = S.el.querySelector('#rn-all');
   if (all) { const ex = S.rows.filter((r) => S.excluded.has(r.e.path)).length; all.checked = ex === 0; all.indeterminate = ex > 0 && ex < S.rows.length; }
+}
+
+/** With more than one folder in the preview, each folder gets a header row with a checkbox for the whole folder. */
+function rebuildItems() {
+  const g = buildItems(S.visible.length, (p) => dirname(S.visible[p].e.path), S.collapsed);
+  S.items = g.items; S.grouped = g.grouped;
+  S.el?.querySelector('#rn-list')?.classList.toggle('is-grouped-list', S.grouped);
+  S.list?.setCount(S.items.length);
+}
+
+function renderFolder(el, it) {
+  const rows = it.pos.map((p) => S.visible[p]);
+  const included = rows.filter((r) => !S.excluded.has(r.e.path)).length;
+  const renamed = rows.filter((r) => !S.excluded.has(r.e.path) && r.newName !== r.e.name && r.status !== 'invalid' && r.status !== 'conflict').length;
+  renderFolderHead(el, {
+    label: it.dir || S.root?.name || 'This folder', title: it.dir || S.root?.name, total: rows.length, sel: included,
+    changedLabel: renamed ? `${renamed.toLocaleString('en-US')} renamed` : '',
+    collapsed: S.collapsed.has(it.dir),
+    onToggle: () => { if (S.collapsed.has(it.dir)) S.collapsed.delete(it.dir); else S.collapsed.add(it.dir); rebuildItems(); },
+    onCheck: (on) => { for (const r of rows) { if (on) S.excluded.delete(r.e.path); else S.excluded.add(r.e.path); } recompute(); },
+  });
 }
 
 function paintEmpty() {
@@ -538,8 +560,11 @@ const STATUS = {
   conflict: ['circle-x', 'Skipped: name already taken'], invalid: ['circle-x', 'Invalid name'], unchanged: [null, 'Unchanged'], excluded: ['x', 'Excluded by you'],
 };
 
-function renderRow(el, i) {
-  const r = S.visible[i];
+function renderRow(el, ii) {
+  const it = S.items[ii];
+  if (!it) return;
+  if (it.head) { renderFolder(el, it); return; }
+  const r = S.visible[it.pos];
   if (!r) return;
   const { e } = r;
   const changedName = r.newName !== e.name;

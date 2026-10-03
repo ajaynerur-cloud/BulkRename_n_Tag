@@ -9,6 +9,7 @@ import { MockRoot } from '../public/js/core/sources.js';
 import { makeRule, runPipeline } from '../public/js/renamer/rules.js';
 import { normaliseInterrupted } from '../public/js/core/manifest.js';
 import { startJob, cancelJob, memoryBudget, activeFor, hasRunning, whenIdle, runPool, conflictFor } from '../public/js/core/jobs.js';
+import { buildItems, interleave } from '../public/js/core/group-utils.js';
 import { readTags, writeTags, planMp3Patch } from '../public/js/tagger/index.js';
 import { writeTagsOffThread } from '../public/js/tagger/pool.js';
 
@@ -279,4 +280,18 @@ await t('jobs share one memory budget', async () => {
   assert.equal(memoryBudget.used, 0);
 });
 
+await t('folder grouping: headers only for 2+ folders, collapse hides files, interleave keeps every file once', async () => {
+  const dirs = ['a', 'a', 'b', 'b', 'b', 'c'];
+  const g = buildItems(dirs.length, (p) => dirs[p]);
+  assert.ok(g.grouped && g.items.filter((x) => x.head).length === 3 && g.items.length === 9);
+  assert.deepEqual(g.items.find((x) => x.head && x.dir === 'b').pos, [2, 3, 4]);
+  const c = buildItems(dirs.length, (p) => dirs[p], new Set(['b']));
+  assert.equal(c.items.length, 6);
+  assert.ok(!buildItems(3, () => 'x').grouped);
+  const rows = dirs.map((d, i) => ({ d, i }));
+  const mixed = interleave(rows, (r) => r.d);
+  assert.equal(mixed.length, rows.length);
+  assert.deepEqual(mixed.map((r) => r.d).slice(0, 3), ['a', 'b', 'c']);
+  assert.deepEqual([...mixed].sort((x, y) => x.i - y.i), rows);
+});
 console.log(`parallel: ${pass} checks passed`);

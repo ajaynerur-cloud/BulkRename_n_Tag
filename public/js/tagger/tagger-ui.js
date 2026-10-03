@@ -9,6 +9,7 @@ import { createTagManifest, manifestFileName, parseManifest } from '../core/mani
 import { addHistory, updateHistory } from '../core/history.js';
 import { startJob, activeFor, conflictFor, runPool, onJobs, memoryBudget } from '../core/jobs.js';
 import { readTags, AUDIO_EXT, planMp3Patch } from './index.js';
+import { buildItems, interleave, renderFolderHead } from '../core/groups.js';
 import { writeTagsOffThread } from './pool.js';
 import { FIELDS, PICTURE_TYPES, GENRES, cloneModel, fieldsEqual, customEqual, picturesEqual } from './model.js';
 import { compileFilenamePattern, parseFilename, suggestFilenamePatterns, autoNumber, exportCSV, importCSV, buildM3U8, COVER_NAMES, resizeImage } from './tools.js';
@@ -19,6 +20,7 @@ const OPTS_KEY = 'nametag.tagger.options';
 const T = {
   el: null, mode: 'edit', root: null, rows: [], view: [], sel: new Set(), anchor: -1, filter: 'all', search: '', list: null, tab: 'main',
   opts: { id3Version: 3, id3v1: 'update', coverMax: 0 }, snapshot: null, restore: null, onSendToRenamer: null, images: [], pending: null, pendingShown: null, sheet: false,
+  items: [], grouped: false, dirs: [], collapsed: new Set(), folderState: new Map(),
 };
 try { Object.assign(T.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
 const saveOpts = () => { try { localStorage.setItem(OPTS_KEY, JSON.stringify(T.opts)); } catch { /* ignore */ } };
@@ -144,7 +146,7 @@ async function load() {
   T.images = entries.filter((e) => !e.isDir && COVER_NAMES.test(e.name));
   const audio = entries.filter((e) => !e.isDir && AUDIO_EXT.test(e.name)).sort((a, b) => naturalCompare(dirname(a.path), dirname(b.path)) || naturalCompare(a.name, b.name));
   T.rows = audio.map((e) => ({ path: e.path, name: e.name, dir: dirname(e.path), getFile: e.getFile || (() => T.root.getFile(e.path)), model: null, orig: null, dirty: false, error: null, size: e.size }));
-  T.sel.clear();
+  T.sel.clear(); T.collapsed.clear(); T.folderState.clear();
   render();
   const p = T.rows.length > 20 ? progress('Reading tags') : null;
   let done = 0;
@@ -205,7 +207,7 @@ function refreshView() {
     if (q) { const f = r.model?.fields || {}; if (![r.path, f.title, f.artist, f.album].some((v) => v && v.toLowerCase().includes(q))) return; }
     T.view.push(i);
   });
-  T.list?.setCount(T.view.length);
+  rebuildItems();
   const empty = T.el.querySelector('#tg-empty');
   if (empty) {
     clear(empty); empty.hidden = !!T.view.length;
@@ -216,7 +218,34 @@ function refreshView() {
   selectionChanged(false);
 }
 
-function renderRow(el, vi) {
+/** The list shows a folder header before each folder's files when more than one folder is open. */
+function rebuildItems() {
+  const g = buildItems(T.view.length, (p) => T.rows[T.view[p]].dir, T.collapsed);
+  T.items = g.items; T.grouped = g.grouped; T.dirs = g.dirs;
+  T.el?.querySelector('.tagbench')?.classList.toggle('is-grouped', T.grouped);
+  T.list?.setCount(T.items.length);
+}
+let repaintTimer = 0;
+const repaintSoon = () => { if (!repaintTimer) repaintTimer = setTimeout(() => { repaintTimer = 0; T.list?.repaint(); }, 150); };
+
+function renderFolder(el, it) {
+  const idx = it.pos.map((p) => T.view[p]);
+  const label = it.dir || T.root?.name || 'This folder';
+  renderFolderHead(el, {
+    label, title: it.dir || label, total: idx.length, sel: idx.filter((i) => T.sel.has(i)).length,
+    changedLabel: (() => { const n = idx.filter((i) => T.rows[i].dirty).length; return n ? `${n.toLocaleString('en-US')} changed` : ''; })(),
+    state: T.folderState.get(it.dir) || '', collapsed: T.collapsed.has(it.dir),
+    onToggle: () => { if (T.collapsed.has(it.dir)) T.collapsed.delete(it.dir); else T.collapsed.add(it.dir); rebuildItems(); },
+    onCheck: (on) => { for (const i of idx) { if (on) T.sel.add(i); else T.sel.delete(i); } selectionChanged(); },
+    onEdit: () => { T.sel.clear(); for (const i of idx) T.sel.add(i); selectionChanged(); if (isCompact()) openSheet(true); },
+  });
+}
+
+function renderRow(el, ii) {
+  const it = T.items[ii];
+  if (!it) return;
+  if (it.head) { renderFolder(el, it); return; }
+  const vi = it.pos;
   const i = T.view[vi]; const r = T.rows[i];
   if (!r) return;
   const f = r.model?.fields || {};
@@ -429,21 +458,29 @@ function infoPane(pane, rows) {
   if (r.model.notes?.length) pane.append(h('ul', { class: 'findings' }, r.model.notes.map((n) => h('li', { class: 'f-info' }, icon('info'), h('span', null, n)))));
 }
 
+/** Files that Save will write: the changed files among the ticked ones, or every changed file when nothing is ticked. */
+function saveTargets() {
+  if (T.sel.size) return [...T.sel].sort((a, b) => a - b).map((i) => T.rows[i]).filter((r) => r && r.dirty);
+  return T.rows.filter((r) => r.dirty);
+}
+
 /* ------------------------------------------------------------------ bar + options */
 function paintBar() {
   const bar = T.el.querySelector('#tg-bar');
   if (!bar) return;
   clear(bar);
-  const dirty = T.rows.filter((r) => r.dirty).length;
+  const dirtyAll = T.rows.filter((r) => r.dirty).length;
+  const targets = saveTargets(); const dirty = targets.length;
+  const folders = new Set(targets.map((r) => r.dir)).size;
   const where = !T.root ? '' : T.root.kind === 'dir' ? `in "${T.root.name}"` : T.root.kind === 'files' && T.root.writable ? 'as a download' : 'inside the ZIP';
   bar.append(
     h('div', { class: 'bar-info' },
-      h('p', { class: 'bar-count' }, T.root ? h('strong', null, `${dirty} file${dirty === 1 ? '' : 's'}`) : 'No files', T.root ? ' with unsaved changes' : ''),
-      h('p', { class: 'bar-sub muted' }, T.sel.size ? `${T.sel.size} selected. ` : '', activeFor(T.root) ? 'Saving in the background. You can keep editing or switch screens; progress is at the top.' : dirty ? `A backup of the old tags will be saved ${where}.` : '')),
+      h('p', { class: 'bar-count' }, T.root ? h('strong', null, `${dirty.toLocaleString('en-US')} file${dirty === 1 ? '' : 's'}`) : 'No files', T.root ? (T.sel.size ? ` to save${folders > 1 ? ` in ${folders} folders` : ''}` : ' with unsaved changes') : ''),
+      h('p', { class: 'bar-sub muted' }, T.sel.size ? `${T.sel.size.toLocaleString('en-US')} selected${dirtyAll > dirty ? `, ${(dirtyAll - dirty).toLocaleString('en-US')} other changed file${dirtyAll - dirty === 1 ? '' : 's'} not included. ` : '. '}` : '', activeFor(T.root) ? 'Saving in the background. You can keep editing or switch screens; progress is at the top.' : dirty ? `A backup of the old tags will be saved ${where}.` : '')),
     h('div', { class: 'btn-row' },
       // Phones: open the editor sheet for files ticked with the checkboxes.
       btn(T.sel.size > 1 ? `Edit ${T.sel.size}` : 'Edit', () => openSheet(true), { cls: 'only-compact', ic: 'pencil', disabled: !T.sel.size }),
-      btn(activeFor(T.root) ? 'Saving…' : T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty || ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty || !!activeFor(T.root) })),
+      btn(activeFor(T.root) ? 'Saving…' : T.root && (T.root.kind === 'dir' || T.root.writable) ? `Save ${dirty ? dirty.toLocaleString('en-US') : ''}`.trim() : 'Save as ZIP', () => save(), { cls: 'btn-primary btn-lg', ic: 'save', disabled: !dirty || !!activeFor(T.root) })),
   );
 }
 
@@ -663,13 +700,13 @@ const MAX_FILES_IN_MEMORY = 192 * 1024 * 1024; // bytes of audio being processed
  *  - a file only counts as saved (no longer "changed") if the tags on screen still equal what was written.
  */
 async function save() {
-  const rows = T.rows.filter((r) => r.dirty);
-  if (!rows.length) return;
+  const rows = saveTargets();
+  if (!rows.length) { if (T.sel.size) toast('The selected files have no changes to save.', { type: 'warn' }); return; }
   const root = T.root;
   if (activeFor(root) || await conflictFor(root)) { toast('A rename or tag save is still running on this folder. It keeps going in the background; save again when it has finished.', { type: 'warn', timeout: 7000 }); return; }
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) return;
   const opts = { id3Version: T.opts.id3Version, id3v1: T.opts.id3v1 };
-  const items = rows.map((r) => ({ r, path: r.path, name: r.name, size: r.size || 0, model: cloneModel(r.model) }));
+  const items = interleave(rows, (r) => r.dir).map((r) => ({ r, dir: r.dir, path: r.path, name: r.name, size: r.size || 0, model: cloneModel(r.model) }));
   const files = items.map(({ r, path, model }) => {
     const picsChanged = !picturesEqual(model.pictures, r.orig.pictures);
     return { path, format: model.format, before: { fields: r.orig.fields, custom: r.orig.custom, pictures: picsChanged ? picsToJSON(r.orig.pictures) : null }, after: { fields: model.fields, custom: model.custom, pictures: picsChanged ? `${model.pictures.length} picture(s)` : null } };
@@ -687,10 +724,16 @@ async function save() {
   if (root.kind === 'files' && root.writable) await saveBlob(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), mName, { description: 'NameTag backup', accept: { 'application/json': ['.json'] } });
   await addHistory({ id: manifest.id, type: 'tags', createdAt: manifest.createdAt, rootName: root.name, source: root.kind, manifestName: mName, manifest, handle: root.handle || null, status: 'in-progress' });
   const total = items.length;
-  const job = startJob({ id: manifest.id, kind: 'tags', title: `Saving tags in ${nf(total)} file${total === 1 ? '' : 's'}${root.name ? ` in "${root.name}"` : ''}`, root, total, run: async (ctx) => {
+  const perDir = new Map(); for (const it of items) perDir.set(it.dir, { total: (perDir.get(it.dir)?.total || 0) + 1, done: 0, failed: 0 });
+  const folderCount = perDir.size;
+  const dirLabel = (d) => d || root.name || 'This folder';
+  for (const d of perDir.keys()) T.folderState.set(d, 'waiting');
+  const job = startJob({ id: manifest.id, kind: 'tags', title: `Saving tags in ${nf(total)} file${total === 1 ? '' : 's'}${folderCount > 1 ? ` across ${nf(folderCount)} folders` : root.name ? ` in "${root.name}"` : ''}`, root, total, run: async (ctx) => {
     const errors = []; const results = new Array(total); let finished = 0;
     ctx.set(0, total, 'Starting…');
+    if (folderCount > 1) for (const [d, c] of perDir) ctx.part(d, dirLabel(d), 0, c.total);
     await runPool(items, async (it, i) => {
+      if (T.folderState.get(it.dir) === 'waiting') { T.folderState.set(it.dir, 'saving'); repaintSoon(); }
       try {
         // Fast path (Android, MP3): the new tag fits where the old one was, so only a few KB are read and written.
         let patched = false;
@@ -711,10 +754,15 @@ async function save() {
         const r = it.r; r.orig = cloneModel(it.model);
         r.dirty = !(fieldsEqual(r.model.fields, r.orig.fields) && customEqual(r.model.custom, r.orig.custom) && picturesEqual(r.model.pictures, r.orig.pictures));
         it.saved = true;
-      } catch (e) { errors.push(`${it.name}: ${e.message}`); }
+      } catch (e) { errors.push(`${it.name}: ${e.message}`); perDir.get(it.dir).failed++; }
+      const pd = perDir.get(it.dir); pd.done++;
+      if (folderCount > 1) ctx.part(it.dir, dirLabel(it.dir), pd.done, pd.total);
+      if (pd.done >= pd.total) { T.folderState.set(it.dir, pd.failed ? 'failed' : 'done'); repaintSoon(); }
       ctx.set(++finished, total, it.name);
     }, { limit: root.isSaf ? 6 : 3, weight: (it) => (root.canPatch && /\.mp3$/i.test(it.path) ? Math.min(it.size, 1 << 20) : it.size), maxWeight: MAX_FILES_IN_MEMORY, budget: memoryBudget, shouldStop: () => ctx.cancelled });
     const done = items.filter((it) => it.saved).length;
+    for (const [d, c] of perDir) if (c.done < c.total) T.folderState.delete(d);
+    setTimeout(() => { for (const [d, c] of perDir) if (c.done >= c.total) T.folderState.delete(d); repaintSoon(); }, 8000);
     if (zip) items.forEach((it, i) => { if (it.saved && results[i]) zip.file(it.path, results[i]); }); // list order, not finishing order
     const cancelled = ctx.cancelled && done + errors.length < total;
     manifest.status = errors.length || done < total ? 'partial' : 'complete';

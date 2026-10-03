@@ -59,10 +59,15 @@ export async function conflictFor(root) {
  */
 export function startJob({ id, kind, title, root = null, total = 0, run }) {
   const controller = new AbortController();
-  const job = { id: id || uuid(), kind, title, root, status: 'running', done: 0, total, label: '', startedAt: Date.now(), finishedAt: 0, cancelRequested: false, result: null, controller };
+  const job = { id: id || uuid(), kind, title, root, status: 'running', done: 0, total, label: '', startedAt: Date.now(), finishedAt: 0, cancelRequested: false, result: null, controller, parts: null };
   const ctx = {
     signal: controller.signal,
     get cancelled() { return job.cancelRequested; },
+    /** Progress of one sub-task (for example one folder of a tag save), shown as its own bar on the card. */
+    part(key, label, done, tot) {
+      (job.parts ||= new Map()).set(key, { label, done, total: tot });
+      emit();
+    },
     set(done, tot, label) {
       job.done = done; if (tot != null) job.total = tot; if (label != null) job.label = label;
       progressSideEffects(job);

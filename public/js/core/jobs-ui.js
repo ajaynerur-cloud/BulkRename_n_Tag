@@ -14,11 +14,25 @@ function build(job) {
   const ic = h('span', { class: 'job-ic', 'aria-hidden': 'true' });
   const msg = h('p', { class: 'job-msg' });
   const note = h('p', { class: 'job-note' }, 'You can switch screens or apps. This keeps running.');
+  const parts = h('div', { class: 'gjobs' });
   const actions = h('div', { class: 'job-actions' });
   const el = h('section', { class: 'job', 'aria-label': job.title }, ic,
-    h('div', { class: 'job-main' }, title, msg, h('div', { class: 'progress-bar' }, bar), h('div', { class: 'job-meta' }, count, label), note),
+    h('div', { class: 'job-main' }, title, msg, h('div', { class: 'progress-bar' }, bar), h('div', { class: 'job-meta' }, count, label), parts, note),
     actions);
-  return { el, bar, count, label, title, ic, msg, note, actions, state: null };
+  return { el, bar, count, label, title, ic, msg, note, parts, actions, state: null };
+}
+
+/** Per-folder bars: the ones that are working now (up to 5), then a one-line summary of the rest. */
+function paintParts(job, c) {
+  const all = job.parts ? [...job.parts.values()] : [];
+  if (all.length < 2) { c.parts.replaceChildren(); return; }
+  const active = all.filter((p) => p.done > 0 && p.done < p.total);
+  const shown = active.slice(0, 5);
+  const waiting = all.filter((p) => p.done === 0 && p.total > 0).length;
+  const finished = all.filter((p) => p.total > 0 && p.done >= p.total).length;
+  c.parts.replaceChildren(
+    ...shown.map((p) => h('div', { class: 'gj' }, h('span', { class: 'mono', title: p.label }, p.label), h('i', null, h('b', { style: `width:${Math.round((p.done / p.total) * 100)}%` })), h('em', null, `${nf(p.done)}/${nf(p.total)}`))),
+    h('p', { class: 'gj-sum' }, `${nf(all.length)} folders: ${nf(finished)} finished, ${nf(active.length)} working${waiting ? `, ${nf(waiting)} waiting` : ''}`));
 }
 
 function paint(job, c) {
@@ -48,7 +62,9 @@ function paint(job, c) {
     c.count.textContent = total ? `${nf(job.done)} of ${nf(total)} (${pct}%)` : `${nf(job.done)} done`;
     c.label.textContent = job.label || '';
     c.note.hidden = false;
+    paintParts(job, c);
   } else {
+    c.parts.replaceChildren();
     c.title.textContent = job.title;
     c.msg.textContent = r?.message || '';
     c.bar.parentElement.setAttribute('hidden', '');
