@@ -76,3 +76,9 @@ What changed and why
    - Tag editor Save now writes the changed files among the ticked ones (all changed files if none ticked).
    - A multi-folder tag save shows one progress bar per folder on the job card; files are taken from all
      folders in turn so folders progress together. (core/groups.js, core/group-utils.js, core/jobs.js parts.)
+
+8. Folder and file browser for the Android app (core/browser-ui.js, NativeRoot in core/sources.js, new
+   direct-file methods in FoldersPlugin.java, MANAGE_EXTERNAL_STORAGE in prepare.mjs). Tick any mix of
+   folders and files across storage, then Open. Needs "All files access" (guided). Not compiled here.
+9. CI: .github/workflows/android.yml no longer uses android-actions/setup-android (GitHub's runners already
+   have the Android SDK); a step accepts the SDK licences instead.
