@@ -37,4 +37,25 @@ const res2 = await executeOps(root, reverseOps(plan.ops));
 t('restore ok', () => { assert.equal(res2.error, null); assert.deepEqual([...root.map.keys()].sort(), [...paths].sort()); });
 t('conflict suffix', () => { const p = buildPlan(entries, new Map([['a.txt', 'Readme.md']]), {}); assert.equal(p.rows.get('a.txt').newName, 'Readme (2).md'); });
 t('invalid name', () => { const p = buildPlan(entries, new Map([['a.txt', 'x/y']]), {}); assert.equal(p.rows.get('a.txt').status, 'invalid'); });
+
+// ---- alphanumeric removal and the newer rules
+const one = (type, o, name, ctx = {}) => [...runPipeline([{ path: 'Artist/Album/' + name, name, isDir: false }], [makeRule(type, o)], ctx).names.values()][0];
+t('codes: random token', () => assert.equal(one('codes', {}, 'au_uu_SzH34yR2.mp3'), 'au_uu.mp3'));
+t('codes: youtube id and uuid', () => { assert.equal(one('codes', {}, 'Song [dQw4w9WgXcQ].mp3'), 'Song.mp3'); assert.equal(one('codes', {}, 'Track 3f2a9c1b-1234-4abc-8def-0123456789ab.mp3'), 'Track.mp3'); });
+t('codes: keeps normal words and years', () => assert.equal(one('codes', {}, 'Hello World 2024.mp3'), 'Hello World 2024.mp3'));
+t('codes: long numbers only when asked', () => { assert.equal(one('codes', { tokens: false, longNum: 6 }, 'clip 123456789 final.mp4'), 'clip final.mp4'); assert.equal(one('codes', { tokens: false }, 'clip 123456789.mp4'), 'clip 123456789.mp4'); });
+t('remove: keep only letters and digits', () => assert.equal(one('remove', { mode: 'keepalnum' }, 'a-b_c 1!.mp3'), 'abc1.mp3'));
+t('remove: keep only letters / digits', () => { assert.equal(one('remove', { mode: 'keepletters' }, 'a1-b2.mp3'), 'ab.mp3'); assert.equal(one('remove', { mode: 'keepdigits' }, 'a1-b2.mp3'), '12.mp3'); });
+t('remove: letters, digits, letters+digits, non-ascii', () => {
+  assert.equal(one('remove', { mode: 'alnum' }, 'ab-12.mp3'), '-.mp3');
+  assert.equal(one('remove', { mode: 'letters' }, 'ab12.mp3'), '12.mp3');
+  assert.equal(one('remove', { mode: 'nonascii' }, 'Héllo Жук.mp3'), 'Hllo .mp3'.replace(' .', '.'));
+  assert.equal(one('remove', { mode: 'alnumcode' }, 'au uu SzH34yR2.mp3'), 'au uu.mp3');
+});
+t('keep only', () => { assert.equal(one('keep', { extra: '-' }, 'Hé llo_wörld!.mp3'), 'Hé llowörld.mp3'); assert.equal(one('keep', { ascii: true, extra: '' }, 'Hé llo wörld!.mp3'), 'H llo wrld.mp3'); assert.equal(one('keep', { extra: '', replaceWith: '-' }, 'a_b.mp3'), 'a-b.mp3'); });
+t('padnum', () => { assert.equal(one('padnum', {}, 'Track 3 of 12.mp3'), 'Track 003 of 012.mp3'); assert.equal(one('padnum', { mode: 'trim' }, '007 song.mp3'), '7 song.mp3'); assert.equal(one('padnum', { which: 'first' }, 'a 1 b 2.mp3'), 'a 001 b 2.mp3'); });
+t('separator', () => { assert.equal(one('separator', { from: 'space', to: '_' }, 'a b  c 1.5.mp3'), 'a_b_c_1.5.mp3'); assert.equal(one('separator', { from: '_', to: 'space' }, 'a_b__c.mp3'), 'a b c.mp3'); });
+t('dedupe', () => assert.equal(one('dedupe', {}, 'Song Song - Artist - Artist.mp3'), 'Song - Artist.mp3'));
+t('foldername', () => { assert.equal(one('foldername', {}, 'x.mp3'), 'Album - x.mp3'); assert.equal(one('foldername', { level: '2', position: 'suffix' }, 'x.mp3'), 'x - Artist.mp3'); });
+t('every rule has fields, label, icon', () => { for (const [k, d] of Object.entries(RULES)) { assert.ok(d.label && d.icon && d.group && d.desc, k); assert.ok(Array.isArray(d.fields), k); } });
 console.log(`renamer: ${pass} checks passed`);
