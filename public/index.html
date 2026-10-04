@@ -100,6 +100,7 @@
   <nav class="tabs-main" aria-label="Sections">
     <a href="#renamer" data-view="renamer"><svg class="ic" aria-hidden="true"><use href="#i-text-cursor-input"/></svg><span>Renamer</span></a>
     <a href="#tagger" data-view="tagger"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Tag editor</span></a>
+    <a href="#batch" data-view="batch"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg><span>Batch</span></a>
     <a href="#history" data-view="history"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span>History</span></a>
     <a href="#guide" data-view="guide"><svg class="ic" aria-hidden="true"><use href="#i-circle-help"/></svg><span>Guide</span></a>
   </nav>
@@ -113,6 +114,7 @@
   <div id="jobs" class="jobs" role="region" aria-label="Running jobs" aria-live="polite" hidden></div>
   <section id="view-renamer" class="view" aria-label="Renamer"></section>
   <section id="view-tagger" class="view" aria-label="Tag editor" hidden></section>
+  <section id="view-batch" class="view" aria-label="Batch folders" hidden></section>
   <section id="view-history" class="view" aria-label="History" hidden></section>
   <section id="view-guide" class="view view-doc" aria-label="Guide" hidden>
     <article class="doc">
@@ -157,6 +159,8 @@
         </tbody>
       </table></div>
 
+      <h2>Batch: many folders at once</h2>
+      <p>Open <strong>Batch</strong>, add folders, and pick a <em>recipe</em> for each (rename rules and/or tag edits; build your own on the Recipes tab). <strong>Run</strong> starts one background job per folder, all in parallel. Follow or stop each one on the Activity tab. Handy rules: <em>Remove codes and IDs</em> (strips things like SzH34yR2), <em>Keep only…</em>, <em>Pad or trim numbers</em>, <em>Change separators</em>, <em>Remove repeated words</em>, <em>Add folder name</em>.</p>
       <h2>Tag editor</h2>
       <p>Select one file or many. With several selected, fields that differ show ‹keep›; leave them and every file keeps its own value. Saving writes <code>nametag-tags-DATE.json</code> with the previous values (and previous covers when they changed) before touching any file. Restore writes those values back and makes a new backup, so a restore can also be undone.</p>
       <p>Tools include Filename to tags (<code>%artist% - %title%</code>, folders with <code>/</code>), auto-numbering, case changes, find and replace, MusicBrainz album lookup, covers from <code>cover.jpg</code> or <code>folder.jpg</code>, lyrics from LRCLIB, CSV export and import, and M3U8 playlists. To rename files from their tags, use Tools, then Rename files from tags.</p>

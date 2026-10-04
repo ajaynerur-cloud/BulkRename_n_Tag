@@ -36,6 +36,11 @@ function emit(now = false) {
 export async function sameSource(a, b) {
   if (!a || !b) return false;
   if (a === b) return true;
+  // A folder-scoped job (batch screen) only touches files directly inside one folder of its parent source.
+  if (a.scopeOf || b.scopeOf) {
+    if (!(await sameSource(a.scopeOf || a, b.scopeOf || b))) return false;
+    return a.scopeOf && b.scopeOf ? a.dir === b.dir : true;
+  }
   if (a.kind !== b.kind) return false;
   try {
     if (a.isNative || b.isNative) return !!(a.isNative && b.isNative && a.overlaps(b));

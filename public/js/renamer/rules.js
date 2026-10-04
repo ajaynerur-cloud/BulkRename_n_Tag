@@ -198,7 +198,7 @@ export const RULES = {
     label: 'Remove characters', icon: 'scissors', group: 'edit',
     desc: 'Cut characters by position, specific text, digits, symbols, or everything before/after a marker.',
     fields: [
-      { key: 'mode', type: 'select', label: 'Remove', options: [['first', 'First N characters'], ['last', 'Last N characters'], ['range', 'Characters from … to …'], ['text', 'Specific words/text (comma separated)'], ['chars', 'Specific characters'], ['digits', 'Digits'], ['before', 'Everything before marker'], ['after', 'Everything after marker'], ['nonalnum', 'All non letters/digits (keeps spaces)'], ['spaces', 'All spaces']], default: 'first' },
+      { key: 'mode', type: 'select', label: 'Remove', options: [['first', 'First N characters'], ['last', 'Last N characters'], ['range', 'Characters from … to …'], ['text', 'Specific words/text (comma separated)'], ['chars', 'Specific characters'], ['digits', 'Digits'], ['before', 'Everything before marker'], ['after', 'Everything after marker'], ['nonalnum', 'All symbols (keeps letters, digits, spaces)'], ['spaces', 'All spaces'], ['letters', 'All letters (any language)'], ['latin', 'Latin letters A–Z only'], ['alnum', 'All letters and digits (keeps symbols and spaces)'],['alnumcode','Mixed letter+digit codes (e.g. SzH34yR2)'], ['nonascii', 'Non-English characters (outside A–Z, 0–9, symbols)'], ['keepalnum', 'Everything except letters and digits (keep only A–Z, 0–9)'], ['keepletters', 'Everything except letters (keep only letters)'], ['keepdigits', 'Everything except digits (keep only digits)']], default: 'first' },
       { key: 'n', type: 'number', label: 'N', default: 1, min: 0, show: (o) => ['first', 'last'].includes(o.mode) },
       { key: 'from', type: 'number', label: 'From position (1-based)', default: 1, min: 1, show: (o) => o.mode === 'range' },
       { key: 'to', type: 'number', label: 'To position (inclusive)', default: 3, min: 1, show: (o) => o.mode === 'range' },
@@ -227,6 +227,14 @@ export const RULES = {
         }
         case 'nonalnum': s = s.replace(/[^\p{L}\p{N}\s]/gu, ''); break;
         case 'spaces': s = s.replace(/\s+/g, ''); break;
+        case 'letters': s = s.replace(/\p{L}/gu, ''); break;
+        case 'latin': s = s.replace(/[A-Za-z\u00C0-\u024F]/g, ''); break;
+        case 'alnum': s = s.replace(/[\p{L}\p{N}]/gu, ''); break;
+        case 'alnumcode': s = s.replace(/(?<![\p{L}\p{N}])(?=[\p{L}\p{N}]*\p{L})(?=[\p{L}\p{N}]*\p{N})[\p{L}\p{N}]{4,}(?![\p{L}\p{N}])/gu, ''); break;
+        case 'nonascii': s = s.replace(/[^\x00-\x7F]/g, ''); break;
+        case 'keepalnum': s = s.replace(/[^\p{L}\p{N}]/gu, ''); break; // keeps only letters and digits
+        case 'keepletters': s = s.replace(/[^\p{L}]/gu, ''); break;
+        case 'keepdigits': s = s.replace(/\D/g, ''); break;
         default:
       }
       st.base = collapse(s);
@@ -488,6 +496,120 @@ export const RULES = {
       const lines = (o.names || '').split(/\r?\n/);
       const n = lines[prep.idx.get(st)]?.trim(); if (!n) return;
       if (o.keepExt) st.base = n; else { const s = splitName(n); st.base = s.base; st.ext = s.ext; }
+    },
+  },
+
+  codes: {
+    label: 'Remove codes and IDs', icon: 'filter', group: 'clean',
+    desc: 'Strip random alphanumeric tokens (SzH34yR2), YouTube IDs, UUIDs, hashes and long numbers, plus the separators left behind.',
+    fields: [
+      { key: 'tokens', type: 'bool', label: 'Mixed letter+digit tokens (e.g. SzH34yR2)', default: true },
+      { key: 'minLen', type: 'number', label: 'Minimum token length', default: 6, min: 3, show: (o) => o.tokens },
+      { key: 'youtube', type: 'bool', label: 'YouTube-style 11-character IDs in [ ] or at the end', default: true },
+      { key: 'uuid', type: 'bool', label: 'UUIDs and long hex hashes (8+ hex digits)', default: true },
+      { key: 'longNum', type: 'number', label: 'Numbers with at least N digits (0 = off)', default: 0, min: 0 },
+      { key: 'where', type: 'select', label: 'Where', options: [['any', 'Anywhere in the name'], ['end', 'Only at the end'], ['start', 'Only at the start']], default: 'any' },
+    ],
+    apply(st, o) {
+      const B = '(?<![\\p{L}\\p{N}])', E = '(?![\\p{L}\\p{N}])';
+      const pos = o.where === 'end' ? '(?=[\\s._\\-\\])}]*$)' : o.where === 'start' ? '(?<=^[\\s._\\-\\[({]*)' : '';
+      let s = st.base; const pats = [];
+      if (o.uuid) { pats.push('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'); pats.push('(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\\d)[0-9a-f]{8,}'); }
+      if (o.youtube) { pats.push(`(?<=[\\[(])[\\w-]{11}(?=[\\])])`); if (o.where !== 'start') pats.push(`(?<=\\s)(?=[\\w-]*[A-Z])(?=[\\w-]*[a-z])(?=[\\w-]*\\d)[\\w-]{11}(?=$)`); }
+      if (o.tokens) { const n = Math.max(3, +o.minLen || 6); pats.push(`(?=[\\p{L}\\p{N}]*\\p{L})(?=[\\p{L}\\p{N}]*\\p{N})[\\p{L}\\p{N}]{${n},}`); }
+      if (+o.longNum > 0) pats.push(`\\d{${+o.longNum},}`);
+      for (const p of pats) {
+        const wrap = p.startsWith('(?<=[') ? p : `${B}(?:${p})${E}`;
+        try { s = s.replace(new RegExp(wrap.replace(/$/, '') + pos, 'giu'), ''); } catch { /* skip */ }
+      }
+      s = s.replace(/[\[(]\s*[\])]/g, '').replace(/[\s_.\-]*([\-_])[\s_.\-]*$/, '').replace(/^[\s_\-.]+/, '').replace(/[\s_\-.]+$/, '');
+      s = collapse(s.replace(/\s*([\-_])\s*(?=[\-_]\s)/g, ''));
+      if (s) st.base = s;
+    },
+  },
+
+  keep: {
+    label: 'Keep only…', icon: 'filter', group: 'edit',
+    desc: 'Delete everything except the kinds of characters you choose, e.g. keep only letters and digits.',
+    fields: [
+      { key: 'letters', type: 'bool', label: 'Letters (any language)', default: true },
+      { key: 'digits', type: 'bool', label: 'Digits', default: true },
+      { key: 'ascii', type: 'bool', label: 'Only English A–Z (drop other scripts and accents)', default: false },
+      { key: 'spaces', type: 'bool', label: 'Spaces', default: true },
+      { key: 'extra', type: 'text', label: 'Also keep these characters', default: '-_.()', placeholder: '-_.()[]&\'' },
+      { key: 'replaceWith', type: 'text', label: 'Replace removed characters with', default: '' },
+    ],
+    apply(st, o) {
+      const extra = [...(o.extra || '')].map((c) => c.replace(/[\\\]^-]/g, '\\$&')).join('');
+      const L = o.letters ? (o.ascii ? 'A-Za-z' : '\\p{L}\\p{M}') : ''; const D = o.digits ? '0-9' : '';
+      const keep = `${L}${D}${o.spaces ? '\\s' : ''}${extra}`;
+      const s = keep ? st.base.replace(new RegExp(`[^${keep}]`, 'gu'), o.replaceWith || '') : '';
+      st.base = collapse(s) || st.base;
+    },
+  },
+
+  padnum: {
+    label: 'Pad or trim numbers', icon: 'hash', group: 'edit',
+    desc: 'Make numbers inside names the same width (3 → 003) or strip leading zeros (007 → 7), so sorting works.',
+    fields: [
+      { key: 'mode', type: 'select', label: 'Action', options: [['pad', 'Pad with zeros'], ['trim', 'Remove leading zeros']], default: 'pad' },
+      { key: 'width', type: 'number', label: 'Width', default: 3, min: 1, show: (o) => o.mode === 'pad' },
+      { key: 'which', type: 'select', label: 'Which numbers', options: [['all', 'All'], ['first', 'First only'], ['last', 'Last only']], default: 'all' },
+    ],
+    apply(st, o) {
+      const w = Math.max(1, +o.width || 3);
+      const fix = (m) => (o.mode === 'trim' ? (m.replace(/^0+(?=\d)/, '')) : m.padStart(w, '0'));
+      const ms = [...st.base.matchAll(/(?<![\d.])\d+(?![\d])/g)]; if (!ms.length) return;
+      const pick = o.which === 'first' ? [ms[0]] : o.which === 'last' ? [ms[ms.length - 1]] : ms;
+      let out = st.base; for (const m of [...pick].reverse()) out = out.slice(0, m.index) + fix(m[0]) + out.slice(m.index + m[0].length);
+      st.base = out;
+    },
+  },
+
+  separator: {
+    label: 'Change separators', icon: 'replace', group: 'clean',
+    desc: 'Swap spaces, underscores, dashes and dots for one another (keeps decimals like 1.5).',
+    fields: [
+      { key: 'from', type: 'select', label: 'Replace', options: [['space', 'Spaces'], ['_', 'Underscores _'], ['-', 'Hyphens -'], ['.', 'Dots .'], ['any', 'Any of the above']], default: 'space' },
+      { key: 'to', type: 'select', label: 'With', options: [['space', 'Space'], ['_', 'Underscore _'], ['-', 'Hyphen -'], ['.', 'Dot .'], ['', 'Nothing']], default: '_' },
+    ],
+    apply(st, o) {
+      const re = { space: /\s+/g, _: /_+/g, '-': /(?<!\d)-+(?!\d)|\s*-+\s*/g, '.': /(?<!\d)\.+|\.+(?!\d)/g, any: /[\s_.\-]+(?<!\d[.]\d)/g }[o.from];
+      const to = o.to === 'space' ? ' ' : o.to;
+      let s = st.base.replace(re, (m) => (o.from === 'any' && /^\d\.\d$/.test(m) ? m : to));
+      if (o.to === 'space') s = collapse(s); else if (to) s = s.replace(new RegExp(`${escapeRegex(to)}{2,}`, 'g'), to).replace(new RegExp(`^${escapeRegex(to)}|${escapeRegex(to)}$`, 'g'), '');
+      st.base = s || st.base;
+    },
+  },
+
+  dedupe: {
+    label: 'Remove repeated words', icon: 'copy', group: 'clean',
+    desc: 'Collapse repeats like "Song Song" or "Artist - Artist - Title" into one.',
+    fields: [
+      { key: 'words', type: 'bool', label: 'Repeated consecutive words', default: true },
+      { key: 'parts', type: 'bool', label: 'Repeated " - " parts', default: true },
+    ],
+    apply(st, o) {
+      let s = st.base;
+      if (o.parts) { const parts = s.split(/\s+-\s+/); const seen = new Set(); s = parts.filter((p) => { const k = p.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }).join(' - '); }
+      if (o.words) s = s.replace(/(?<![\p{L}\p{N}])([\p{L}\p{N}']+)(?:\s+\1)+(?![\p{L}\p{N}])/giu, '$1');
+      st.base = s;
+    },
+  },
+
+  foldername: {
+    label: 'Add folder name', icon: 'folder', group: 'build',
+    desc: 'Put the parent (or grandparent) folder name before or after the file name, or use it as the whole name.',
+    fields: [
+      { key: 'level', type: 'select', label: 'Folder', options: [['1', 'Parent folder'], ['2', 'Grandparent folder']], default: '1' },
+      { key: 'position', type: 'select', label: 'Position', options: [['prefix', 'Before name'], ['suffix', 'After name'], ['replace', 'Replace name']], default: 'prefix' },
+      { key: 'sep', type: 'text', label: 'Separator', default: ' - ', show: (o) => o.position !== 'replace' },
+    ],
+    apply(st, o, ctx) {
+      const parts = (st.path || '').split('/').filter(Boolean); parts.pop();
+      const name = parts[parts.length - (+o.level || 1)] || (+o.level === 1 ? ctx.rootName : '') || '';
+      if (!name) return;
+      if (o.position === 'replace') st.base = name; else if (o.position === 'suffix') st.base = st.base + (o.sep ?? '') + name; else st.base = name + (o.sep ?? '') + st.base;
     },
   },
 

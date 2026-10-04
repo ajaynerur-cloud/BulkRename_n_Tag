@@ -9,9 +9,10 @@ import { hasRunning, isRunning, whenIdle, onJobs } from './core/jobs.js';
 import { parseManifest } from './core/manifest.js';
 import * as renamer from './renamer/renamer-ui.js';
 import * as tagger from './tagger/tagger-ui.js';
+import * as batch from './batch/batch-ui.js';
 import { AUDIO_EXT } from './tagger/index.js';
 
-const VIEWS = ['renamer', 'tagger', 'history', 'guide'];
+const VIEWS = ['renamer', 'tagger', 'batch', 'history', 'guide'];
 const $ = (s) => document.querySelector(s);
 let current = null;
 
@@ -24,7 +25,7 @@ function route() {
   for (const name of VIEWS) $(`#view-${name}`).hidden = name !== v;
   document.querySelectorAll('.tabs-main a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (v === 'history') renderHistory();
-  document.title = `${{ renamer: 'Renamer', tagger: 'Tag editor', history: 'History', guide: 'Guide' }[v]} · NameTag`;
+  document.title = `${{ renamer: 'Renamer', tagger: 'Tag editor', batch: 'Batch', history: 'History', guide: 'Guide' }[v]} · NameTag`;
 }
 const go = (v) => { if (location.hash !== `#${v}`) location.hash = v; else route(); };
 
@@ -183,6 +184,7 @@ function boot() {
   let sig = '';
   onJobs((list) => { const now = list.map((j) => `${j.id}:${j.status}`).join(); if (now !== sig) { sig = now; if (current === 'history') renderHistory(); } });
   renamer.mountRenamer($('#view-renamer'));
+  batch.mountBatch($('#view-batch'));
   tagger.mountTagger($('#view-tagger'), { onSendToRenamer: (root, rules) => { go('renamer'); renamer.openWithRules(root, rules); } });
   window.addEventListener('hashchange', route);
   route();

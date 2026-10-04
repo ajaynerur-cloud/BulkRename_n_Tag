@@ -105,6 +105,13 @@ Undo and backup files never store absolute paths. Every path is relative to the 
 
 This applies to all three tools: renamer, extension renamer and tag editor. The Tag editor can also open a ZIP directly, edit the audio inside, and save the ZIP back.
 
+### Batch screen
+Folders / Recipes / Activity. Add folders, give each folder a recipe (saved rename rules plus tag edits such as
+Album = {parent}), then Run: every folder becomes its own background job and they all run at once, each with its own
+bar and Stop button. Works on folders changed in place (not ZIPs). Rules added: Remove codes and IDs, Keep only...,
+Pad or trim numbers, Change separators, Remove repeated words, Add folder name; Remove characters gained
+letters / digits / letters+digits / mixed codes / keep-only modes.
+
 ## Tag editor
 
 **Editing**
@@ -211,6 +218,7 @@ public/
   js/core/                   utils, ui (dialogs, menus, virtual list), sources (folder/ZIP/import), remap (portable restore),
                              planner (conflicts, ordering, execute, restore), manifest, history (IndexedDB)
   js/renamer/                rules, analyzer, presets, extensions, renamer-ui
+  js/batch/                  recipes, run (per-folder parallel jobs), batch-ui (Folders / Recipes / Activity)
   js/tagger/                 bytes, model, id3, mpeg, flac, vorbis, ogg, mp4, riff, index, tools, online, tagger-ui
   vendor/jszip.min.js, fonts/ (Atkinson Hyperlegible Next and Mono, OFL), icons/
 scripts/                     stamp-version.mjs (Render build), check.mjs, icons/ (icon artwork + renderer),

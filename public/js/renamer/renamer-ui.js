@@ -240,7 +240,7 @@ function render() {
 const withAnchor = (b) => { b.dataset.menuAnchor = ''; return b; };
 
 /* ------------------------------------------------------------------ rules column */
-function ruleFields(def) {
+export function ruleFields(def) {
   return def.fields.map((f) => ({
     key: f.key, label: f.label, placeholder: f.placeholder, min: f.min, max: f.max, options: f.options, showIf: f.show,
     type: { bool: 'checkbox', template: 'text', code: 'textarea' }[f.type] || f.type,
@@ -250,7 +250,7 @@ function ruleFields(def) {
   }));
 }
 
-function ruleSummary(r) {
+export function ruleSummary(r) {
   const def = RULES[r.type];
   const parts = [];
   for (const f of def.fields) {

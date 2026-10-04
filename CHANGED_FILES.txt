@@ -82,3 +82,14 @@ What changed and why
    folders and files across storage, then Open. Needs "All files access" (guided). Not compiled here.
 9. CI: .github/workflows/android.yml no longer uses android-actions/setup-android (GitHub's runners already
    have the Android SDK); a step accepts the SDK licences instead.
+
+10. Batch screen (Option C): new nav item "Batch" with tabs Folders / Recipes / Activity.
+   public/js/batch/recipes.js (recipes = rename rules + tag edits, storage, per-folder planning),
+   public/js/batch/run.js (one background job per folder, folders run in parallel, jobs.js treats a
+   folder-scoped job as conflicting only with the same folder or a whole-source job),
+   public/js/batch/batch-ui.js, plus css/app.css, index.html, app.js, sw.js, renamer-ui.js (exports
+   ruleFields/ruleSummary), core/jobs.js (scoped sameSource). Test: tests/batch.test.mjs.
+11. Rules: "Remove characters" fixed and extended (letters, Latin, letters+digits, mixed letter+digit codes,
+   non-English, keep only letters+digits / letters / digits). New rules: Remove codes and IDs, Keep only...,
+   Pad or trim numbers, Change separators, Remove repeated words, Add folder name (public/js/renamer/rules.js).
+
