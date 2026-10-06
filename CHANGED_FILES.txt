@@ -1,15 +1,16 @@
-NameTag update: UI refresh + rules text fixes. Only the files that changed since the previous zip.
-Copy them into your repository at the same paths (replace existing files), commit, then run "Android APK".
+NameTag update: Android media library re-index after every rename and tag save (on by default).
+Copy these files into your repository at the same paths (replace existing files), commit, then run "Android APK".
 
 New files:
-  (none)
+  public/js/core/media-index.js
+  tests/media-index.test.mjs
 
 Changed files:
-  public/css/app.css
-  public/index.html
-  public/js/core/ui.js
-  public/js/renamer/renamer-ui.js
-  public/js/renamer/rules.js
+  scripts/android/java/FoldersPlugin.java
+  public/js/core/sources.js
+  public/js/core/jobs.js
+  public/sw.js
+  package.json
   README.md
 
 Deleted files:
@@ -17,79 +18,21 @@ Deleted files:
 
 What changed and why
 ---------------------
+After renaming files or saving tags, music players and Gallery kept showing the old names / old tags, because
+Android's media library (MediaStore) had not rescanned the files.
 
-1. Text that was hidden or cut off is now shown.
-   - Rule cards: the settings summary was squeezed onto one line next to the title and cut to
-     "Normalise separators, rem…". Title and summary now sit on two lines, the summary wraps
-     to two lines when collapsed and shows in full when the rule is open (full text on hover too).
-   - The summary now shows the rule's real settings ("Remove: First N characters", "Separator: “·-·”")
-     instead of the generic description. Whitespace-only values such as " - " are made visible.
-   - Tag editor on phones: the Main / More / Cover / Lyrics / Custom / Info tabs collapsed to zero
-     height (flex item with overflow in a scrolling column). Fixed, and the tabs wrap if narrow.
-   - Phone toolbar: "Open folder" was cut off ("Open fo") behind a horizontal scroll. The mode switch
-     now has its own row and the source buttons share the next row.
-   - Pattern analyser examples: old and new names are stacked and wrap instead of being truncated.
-   - Long checkbox labels and help text wrap correctly; preview names show the full name on hover.
+1. Native (FoldersPlugin.java): new method scanMedia({ paths } or { uri, ids }). It calls
+   MediaScannerConnection.scanFile for the given files. Paths that exist are (re)indexed with their new tags;
+   paths that no longer exist (old names) are dropped from the library. For a picked folder, document ids of
+   the phone's own storage and SD cards ("primary:Music/a.mp3") are converted to file paths. Before Android 10
+   the files inside renamed folders are listed explicitly, since the old scanner does not walk folders.
+2. sources.js: SafRoot (Open folder) and NativeRoot (in-app file browser) record every file they rename,
+   write, patch in place or delete - old and new paths, and the files inside a renamed folder.
+3. jobs.js + media-index.js: when any job ends (rename, extension rename, tag save, restore, batch), the
+   changed files are sent to scanMedia. This is the default; it also runs after Stop or an error, never fails
+   a job, and does nothing in the browser, for ZIPs/imports, or on an older APK without scanMedia.
+   (Hidden opt-out for troubleshooting: localStorage 'nametag.mediaIndex' = 'off'.)
+4. tests/media-index.test.mjs (in npm test): renames incl. folder renames, tag saves, SAF ids, Stop/error,
+   opt-out and old builds.
 
-2. Clearer rule names, grouped in the Add rule menu (Clean up / Edit text / Build new names / Advanced):
-   Clean up -> Tidy up names, Change case -> Change letter case, Clear existing pattern -> Strip numbers
-   and tags, Find & replace -> Find and replace, Replace list -> Replace many at once, Remove -> Remove
-   characters, Keep part -> Keep only part, Numbering -> Add numbers, Template -> Build from template,
-   Extension -> Change extension, Date -> Add or reformat date, Names from list -> Rename from a list,
-   Custom script -> Custom script (JavaScript). Rule types and saved settings/presets are unchanged,
-   so existing presets and undo files keep working.
-
-3. UI refresh (desktop and mobile).
-   - New palette (neutral surfaces, indigo accent) for light and dark themes, softer cards and shadows.
-   - Desktop (>=1100px): navigation moves into a left sidebar; the theme switch sits at its bottom.
-   - Rules: icon tiles, chevrons, "Changed only" as a toggle chip, floating action bar.
-   - Phones: two-line preview rows with an arrow for the new name, larger touch targets, bottom sheets.
-
-4. Background and parallel work (renames and tag saves).
-   - New job manager (core/jobs.js, core/jobs-ui.js): work continues when you change screens or apps; progress
-     card with Stop at the top; Web Lock, wake lock, unload warning, update reload deferred while busy.
-   - Renames run in parallel with a dependency graph (core/planner.js executeOpsParallel): numbering and names
-     are fixed at plan time, so results equal the sequential result. Stop/failure leave an exactly undoable state.
-   - Undo file is checkpointed during the run; interrupted renames can be resumed (Renamer and History).
-   - Tag saves run up to 3 files at once in a Web Worker pool (tagger/pool.js, worker.js) with a memory budget.
-   - Android: foreground service (KeepAliveService.java, plugin methods, manifest entries in prepare.mjs).
-     Not compiled in this environment: build the APK once to confirm.
-   - Tests: tests/parallel.test.mjs. Service worker precache list updated.
-
-5. Android speed. Saving tags listed the whole parent folder for every file (slow in big folders) - now the
-   size comes from the first listing. Native read/write/rename/delete run on a 4-thread pool (Capacitor
-   otherwise runs them one at a time), and Android folders use 4 parallel files instead of 2.
-
-6. Much faster tag saves on Android, and several jobs at once.
-   - MP3 fast path (tagger/index.js planMp3Patch, SafRoot.writeAt, FoldersPlugin.writeAt): when the edited tag
-     fits in the space of the old tag + padding, only that part (a few KB) is read and overwritten in place;
-     the song is no longer copied through the storage bridge twice. Used only on the phone's own storage and
-     checked for unchanged file size. Bigger edits (new cover art, long lyrics) use the normal full rewrite.
-   - Jobs on different folders run at the same time (rename + tag save, or several renames). The same folder
-     is still refused. All jobs share one memory budget (core/jobs.js memoryBudget).
-   - Android: up to 6 files in parallel for tags.
-
-7. Folders in the lists (Renamer preview and Tag editor).
-   - With 2+ folders open, each folder gets a header: checkbox for the whole folder (partly-filled when some
-     files are ticked), collapse arrow, file count, changed/renamed count. Tag editor: Edit folder button and
-     a Saving / Waiting / Saved chip.
-   - Tag editor Save now writes the changed files among the ticked ones (all changed files if none ticked).
-   - A multi-folder tag save shows one progress bar per folder on the job card; files are taken from all
-     folders in turn so folders progress together. (core/groups.js, core/group-utils.js, core/jobs.js parts.)
-
-8. Folder and file browser for the Android app (core/browser-ui.js, NativeRoot in core/sources.js, new
-   direct-file methods in FoldersPlugin.java, MANAGE_EXTERNAL_STORAGE in prepare.mjs). Tick any mix of
-   folders and files across storage, then Open. Needs "All files access" (guided). Not compiled here.
-9. CI: .github/workflows/android.yml no longer uses android-actions/setup-android (GitHub's runners already
-   have the Android SDK); a step accepts the SDK licences instead.
-
-10. Batch screen (Option C): new nav item "Batch" with tabs Folders / Recipes / Activity.
-   public/js/batch/recipes.js (recipes = rename rules + tag edits, storage, per-folder planning),
-   public/js/batch/run.js (one background job per folder, folders run in parallel, jobs.js treats a
-   folder-scoped job as conflicting only with the same folder or a whole-source job),
-   public/js/batch/batch-ui.js, plus css/app.css, index.html, app.js, sw.js, renamer-ui.js (exports
-   ruleFields/ruleSummary), core/jobs.js (scoped sameSource). Test: tests/batch.test.mjs.
-11. Rules: "Remove characters" fixed and extended (letters, Latin, letters+digits, mixed letter+digit codes,
-   non-English, keep only letters+digits / letters / digits). New rules: Remove codes and IDs, Keep only...,
-   Pad or trim numbers, Change separators, Remove repeated words, Add folder name (public/js/renamer/rules.js).
-
+Not compiled here (no Android SDK in this environment): build the APK once to confirm.

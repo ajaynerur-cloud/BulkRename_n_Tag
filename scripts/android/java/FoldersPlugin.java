@@ -9,6 +9,7 @@ import android.os.Environment;
 import android.provider.Settings;
 import android.content.Intent;
 import android.content.UriPermission;
+import android.media.MediaScannerConnection;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
@@ -34,6 +35,10 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayDeque;
+import java.util.LinkedHashSet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
 
 /**
@@ -471,6 +476,68 @@ public class FoldersPlugin extends Plugin {
             File f = new File(call.getString("path", ""));
             JSObject r = new JSObject(); r.put("deleted", f.delete()); call.resolve(r);
         } catch (Exception e) { call.reject("Delete failed: " + e.getMessage(), e); }
+    }
+
+    /* ================================================================ media library re-index
+     * After a rename or tag save, Android's media library (MediaStore) still shows the old file names and old
+     * tags until it happens to rescan. scanMedia asks it to look again at exactly the files that changed:
+     * new paths are (re)indexed with their new tags, old paths that no longer exist are dropped.
+     *   paths: absolute file paths (in-app browser / All files access)
+     *   uri + ids: a picked folder (Storage Access Framework); document ids of the phone's own storage and
+     *              SD cards ("primary:Music/a.mp3", "1234-ABCD:Music/a.mp3") are turned into file paths. */
+    @PluginMethod
+    public void scanMedia(PluginCall call) { POOL.execute(() -> scanMediaImpl(call)); }
+
+    private void scanMediaImpl(PluginCall call) {
+        try {
+            LinkedHashSet<String> want = new LinkedHashSet<>();
+            JSArray paths = call.getArray("paths");
+            if (paths != null) for (int i = 0; i < paths.length(); i++) { String p = paths.optString(i, null); if (p != null && !p.isEmpty()) want.add(p); }
+            String uri = call.getString("uri");
+            JSArray ids = call.getArray("ids");
+            if (uri != null && ids != null) {
+                Uri tree = Uri.parse(uri);
+                for (int i = 0; i < ids.length(); i++) { String p = pathForDocId(tree, ids.optString(i, null)); if (p != null) want.add(p); }
+            }
+            // Before Android 10 the scanner does not walk into folders: list renamed folders' files explicitly.
+            if (Build.VERSION.SDK_INT < 29) {
+                for (String p : new java.util.ArrayList<>(want)) {
+                    File f = new File(p);
+                    if (!f.isDirectory()) continue;
+                    ArrayDeque<File> q = new ArrayDeque<>(); q.add(f);
+                    while (!q.isEmpty() && want.size() < 50000) {
+                        File[] kids = q.poll().listFiles(); if (kids == null) continue;
+                        for (File k : kids) { if (k.isDirectory()) q.add(k); else want.add(k.getAbsolutePath()); }
+                    }
+                }
+            }
+            JSObject r = new JSObject();
+            r.put("requested", want.size());
+            if (want.isEmpty()) { r.put("scanned", 0); call.resolve(r); return; }
+            String[] arr = want.toArray(new String[0]);
+            CountDownLatch latch = new CountDownLatch(arr.length);
+            AtomicInteger indexed = new AtomicInteger();
+            MediaScannerConnection.scanFile(getContext(), arr, null, (path, u) -> { if (u != null) indexed.incrementAndGet(); latch.countDown(); });
+            boolean finished = latch.await(Math.min(300, 30 + arr.length / 20), TimeUnit.SECONDS);
+            r.put("scanned", arr.length - (int) latch.getCount());
+            r.put("indexed", indexed.get());
+            r.put("finished", finished);
+            call.resolve(r);
+        } catch (Exception e) { call.reject("Could not update the media library: " + e.getMessage(), e); }
+    }
+
+    /** File path behind a document of Android's own storage provider, or null for other providers (cloud, Downloads ids). */
+    private static String pathForDocId(Uri tree, String id) {
+        if (id == null || tree == null || !"com.android.externalstorage.documents".equals(tree.getAuthority())) return null;
+        int c = id.indexOf(':');
+        if (c <= 0) return null;
+        String vol = id.substring(0, c); String rel = id.substring(c + 1);
+        String base;
+        if ("primary".equalsIgnoreCase(vol)) base = Environment.getExternalStorageDirectory().getAbsolutePath();
+        else if ("home".equalsIgnoreCase(vol)) base = new File(Environment.getExternalStorageDirectory(), "Documents").getAbsolutePath();
+        else if ("raw".equalsIgnoreCase(vol)) return rel;
+        else base = "/storage/" + vol;
+        return rel.isEmpty() ? base : base + "/" + rel;
     }
 
     private static String mimeFor(String name) {

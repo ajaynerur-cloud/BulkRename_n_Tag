@@ -11,6 +11,7 @@
 //    proceeds (see renamer-ui.js). If the app is killed anyway, nothing is lost: Undo covers what was done
 //    and Resume finishes the rest.
 import { uuid } from './utils.js';
+import { reindexMedia } from './media-index.js';
 
 const jobs = [];
 const subs = new Set();
@@ -86,6 +87,17 @@ export function startJob({ id, kind, title, root = null, total = 0, run }) {
   job.promise = (async () => {
     let result;
     try { result = (await run(ctx)) || {}; } catch (e) { console.warn('job failed', e); result = { status: 'error', message: e.message || String(e) }; }
+    // Default for every rename / tag save / restore on Android: refresh the media library for the files that
+    // changed (also after Stop or an error, since part of the work may be done). The job stays "running"
+    // meanwhile, so the foreground service keeps the app alive until the scan is through.
+    try {
+      const src = root?.scopeOf || root;
+      if (src?.takeMediaChanges && (src.mediaIds?.size || src.mediaPaths?.size)) {
+        job.label = 'Updating the Android media library…'; emit(true);
+        const scan = await reindexMedia(root);
+        if (scan?.requested) job.mediaIndexed = scan.requested;
+      }
+    } catch { /* never fails the job */ }
     if (job.cancelRequested && result.status === 'done') result.status = 'cancelled';
     job.result = result;
     job.status = result.status || 'done';

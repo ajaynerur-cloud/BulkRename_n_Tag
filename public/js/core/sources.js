@@ -213,6 +213,13 @@ export class SafRoot extends BaseRoot {
     this.uri = saf; this.rootId = rootId;
     this.canRenameInPlace = true; this.allowCopyFallback = false; this.isSaf = true;
     this.ids = new Map(); // path -> { id, isDir }
+    this.mediaIds = new Set(); // document ids changed since the last media-library scan (old and new names)
+  }
+  /** Changed files for Android's media library re-index (see core/media-index.js); clears the list. */
+  takeMediaChanges() {
+    if (!this.mediaIds.size) return null;
+    const ids = [...this.mediaIds]; this.mediaIds.clear();
+    return { uri: this.uri, ids };
   }
   // The native plugin runs file calls on a small thread pool, so a few at a time overlap.
   get maxConcurrency() { return 4; }
@@ -276,11 +283,12 @@ export class SafRoot extends BaseRoot {
       throw new Error(`Android renamed "${basename(from)}" to "${r.name}" instead of "${want}". Nothing was changed for this item.`);
     }
     this.ids.delete(from); this.ids.set(to, { ...x, id: r.id });
+    this.mediaIds.add(x.id); this.mediaIds.add(r.id);
     if (x.isDir) {
       // Children may have new ids now: re-read that folder.
-      for (const k of [...this.ids.keys()]) if (k.startsWith(`${from}/`)) this.ids.delete(k);
+      for (const k of [...this.ids.keys()]) if (k.startsWith(`${from}/`)) { this.mediaIds.add(this.ids.get(k).id); this.ids.delete(k); }
       const sub = (await SafRoot.plugin.list({ uri: this.uri, id: r.id, recursive: true })).entries || [];
-      for (const e of sub) this.ids.set(`${to}/${e.path}`, { id: e.id, isDir: e.isDir, size: e.size, mtime: e.mtime });
+      for (const e of sub) { this.ids.set(`${to}/${e.path}`, { id: e.id, isDir: e.isDir, size: e.size, mtime: e.mtime }); if (!e.isDir) this.mediaIds.add(e.id); }
     }
   }
   /** Whole file in memory (needed to write tags). */
@@ -305,6 +313,7 @@ export class SafRoot extends BaseRoot {
     for (const w of writes) {
       const data = await bytesToB64(new Blob([w.bytes]), 0, w.bytes.length);
       const r = await SafRoot.plugin.writeAt({ uri: this.uri, id, offset: w.offset, data });
+      this.mediaIds.add(id);
       if (r.after != null && expectedSize != null && Number(r.after) !== Number(expectedSize)) throw new Error('The storage provider changed the file size while patching it. Check this file.');
     }
     const cur = this.ids.get(path); if (cur) cur.mtime = Date.now();
@@ -322,9 +331,10 @@ export class SafRoot extends BaseRoot {
         await SafRoot.plugin.write({ uri: this.uri, id, data, append: !first });
       }
     }
+    if (id) this.mediaIds.add(id);
     const cur = this.ids.get(path); if (cur) { cur.size = blob.size; cur.mtime = Date.now(); }
   }
-  async remove(path) { await SafRoot.plugin.delete({ uri: this.uri, id: this.idOf(path) }); this.ids.delete(path); }
+  async remove(path) { const id = this.idOf(path); await SafRoot.plugin.delete({ uri: this.uri, id }); this.ids.delete(path); this.mediaIds.add(id); }
   async finalize() { return { saved: true, message: 'Changes were written directly to the folder.' }; }
 }
 
@@ -359,6 +369,7 @@ export class NativeRoot extends BaseRoot {
     this.canRenameInPlace = true; this.allowCopyFallback = false; this.isNative = true;
     this.single = this.items.length === 1 && this.items[0].isDir;
     this.meta = new Map(); // virtual path -> { size, mtime }
+    this.mediaPaths = new Set(); // absolute paths changed since the last media-library scan (old and new names)
     if (this.single) { this.base = this.items[0].path; this.home = this.base; if (!name) this.name = nameOf(this.base) || 'Folder'; }
     else {
       this.tops = new Map();
@@ -376,6 +387,12 @@ export class NativeRoot extends BaseRoot {
   }
   get maxConcurrency() { return 6; }
   get canPatch() { return true; }
+  /** Changed files for Android's media library re-index (see core/media-index.js); clears the list. */
+  takeMediaChanges() {
+    if (!this.mediaPaths.size) return null;
+    const paths = [...this.mediaPaths]; this.mediaPaths.clear();
+    return { paths };
+  }
   static get plugin() { return window.Capacitor.Plugins.NameTagFolders; }
 
   /** Do the two selections share any file (one contains the other, or they are the same)? */
@@ -467,7 +484,11 @@ export class NativeRoot extends BaseRoot {
     if (topMove && to.includes('/')) throw new Error('Moving a picked item into another folder is not supported.');
     const fromAbs = this.abs(from);
     const toAbs = topMove ? `${parentOf(fromAbs)}/${to}` : this.abs(to);
+    // Files inside a renamed folder change path too: remember old and new paths for the media library.
+    const inner = [...this.meta.keys()].filter((k) => k.startsWith(`${from}/`)).map((k) => this.abs(k));
     await P.fsRename({ from: fromAbs, to: toAbs });
+    this.mediaPaths.add(fromAbs); this.mediaPaths.add(toAbs);
+    for (const a of inner) { this.mediaPaths.add(a); this.mediaPaths.add(toAbs + a.slice(fromAbs.length)); }
     if (topMove) { const t = this.tops.get(from); this.tops.delete(from); this.tops.set(to, { ...t, abs: toAbs }); const m = this.meta.get(from); if (m) { this.meta.delete(from); this.meta.set(to, m); } }
     else if (this.meta.has(from)) { this.meta.set(to, this.meta.get(from)); this.meta.delete(from); }
   }
@@ -493,6 +514,7 @@ export class NativeRoot extends BaseRoot {
       const data = await bytesToB64(blob, pos, Math.min(blob.size, pos + SAF_CHUNK));
       await NativeRoot.plugin.fsWrite({ path: abs, data, append: !first });
     }
+    this.mediaPaths.add(abs);
     const m = this.meta.get(path); if (m) { m.size = blob.size; m.mtime = Date.now(); }
   }
   async writeAt(path, writes, expectedSize) {
@@ -500,11 +522,12 @@ export class NativeRoot extends BaseRoot {
     for (const w of writes) {
       const data = await bytesToB64(new Blob([w.bytes]), 0, w.bytes.length);
       const r = await NativeRoot.plugin.fsWriteAt({ path: abs, offset: w.offset, data });
+      this.mediaPaths.add(abs);
       if (r.after != null && expectedSize != null && Number(r.after) !== Number(expectedSize)) throw new Error('The file size changed while patching it. Check this file.');
     }
     const m = this.meta.get(path); if (m) m.mtime = Date.now();
   }
-  async remove(path) { await NativeRoot.plugin.fsDelete({ path: this.abs(path) }); this.meta.delete(path); }
+  async remove(path) { const abs = this.abs(path); await NativeRoot.plugin.fsDelete({ path: abs }); this.meta.delete(path); this.mediaPaths.add(abs); }
   async finalize() { return { saved: true, message: 'Changes were written directly to the folders.' }; }
 }
 
