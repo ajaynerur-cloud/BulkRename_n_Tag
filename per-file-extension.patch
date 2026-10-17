@@ -1,0 +1,354 @@
+diff --git a/package.json b/package.json
+index 596a614..69d2cc6 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "nametag",
+-  "version": "1.1.0",
++  "version": "1.2.0",
+   "private": true,
+   "description": "Offline PWA and Android app: bulk renamer for files, folders and ZIPs with pattern analysis and portable JSON undo, extension renamer, and an audio tag editor with backups.",
+   "type": "module",
+diff --git a/public/css/app.css b/public/css/app.css
+index 7813ff1..ba53607 100644
+--- a/public/css/app.css
++++ b/public/css/app.css
+@@ -131,6 +131,9 @@ dd .tape { white-space: normal; word-break: break-all; text-transform: none; let
+ }
+ .tabs-main a:hover { color: var(--ink); background: var(--panel); }
+ .tabs-main a[aria-current='page'] { color: var(--primary); background: var(--primary-soft); }
++.app-ver { flex: none; font: 600 0.7rem/1 var(--mono, ui-monospace, monospace); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 9px; cursor: pointer; white-space: nowrap; }
++.app-ver:hover { color: var(--text, inherit); border-color: var(--primary-line); }
++.app-ver-line { margin-top: 18px; font-size: 0.8rem; }
+ .head-actions { display: flex; gap: 6px; align-items: center; }
+ 
+ main { padding: 20px 24px 24px; max-width: 1680px; margin: 0 auto; }
+@@ -317,6 +320,14 @@ details.panel:not([open]) { gap: 0; }
+ .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+ .pdir { color: var(--muted); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .ic-dir { color: var(--primary); width: 16px; height: 16px; }
++.pnew { display: flex; align-items: center; gap: 8px; min-width: 0; }
++.pnew .fname, .pnew .fname-split { flex: 1 1 auto; min-width: 0; }
++.fname-split { display: flex; white-space: nowrap; }
++.fname-split .fbase { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
++.fname-split .fext { flex: none; }
++.fname-split mark { padding: 0 2px; }
++.pext { flex: 0 0 76px; width: 76px; min-height: 28px; padding: 2px 7px; font-size: 0.85em; }
++.pext.is-set { border-color: var(--primary-line); }
+ .pstatus { display: grid; place-items: center; }
+ .pstatus .ic { width: 16px; height: 16px; }
+ .st-ok .pstatus { color: var(--ok); }
+@@ -741,6 +752,8 @@ html.is-native-app #install-btn { display: none !important; }
+   .prow > .pcell:nth-of-type(1) .fname { color: var(--muted); font-size: 0.85em; }
+   .prow > .pstatus { grid-column: 3; grid-row: 1 / 3; }
+   .prow .pdir { display: none; }
++  .prow > .pcell:nth-of-type(2) .fname-split::before { content: '→ '; color: var(--primary); white-space: pre; flex: none; }
++  .pext { flex-basis: 64px; width: 64px; }
+   .tag-head, .trow { grid-template-columns: 28px minmax(0, 1fr) 40px; }
+   .tag-head > :nth-child(n+3):not(:nth-child(6)), .trow > .tcell:not(.tfile):not(.num), .trow > .tcell.num:last-child, .tag-head > :last-child { display: none !important; }
+   .tag-head > :nth-child(6), .trow > .tcell.num:nth-child(6) { display: block !important; }
+diff --git a/public/index.html b/public/index.html
+index 7bd9296..a98d038 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -97,6 +97,7 @@
+ <a class="skip" href="#main">Skip to content</a>
+ <header class="app-head">
+   <a class="brand" href="#renamer" aria-label="NameTag home"><img class="brand-icon" src="icons/favicon.svg" width="30" height="30" alt=""><span class="tape tape-logo" aria-hidden="true">NameTag</span></a>
++  <button type="button" class="app-ver" id="app-ver" aria-label="App version. Tap to copy."></button>
+   <nav class="tabs-main" aria-label="Sections">
+     <a href="#renamer" data-view="renamer"><svg class="ic" aria-hidden="true"><use href="#i-text-cursor-input"/></svg><span>Renamer</span></a>
+     <a href="#tagger" data-view="tagger"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Tag editor</span></a>
+@@ -132,7 +133,7 @@
+       </ol>
+ 
+       <h2>Changing extensions</h2>
+-      <p>Choose <strong>Extensions</strong> at the top of the Renamer. It works on a folder, a ZIP or imported files, subfolders included. Every extension found is listed with its count: type a new one next to any group (<code>-</code> removes it), or use the quick options: letter case, unify spellings (<code>jpeg</code> to <code>jpg</code>, <code>htm</code> to <code>html</code>), fix extensions that do not match the file contents, and add missing ones. It writes the same undo file as any rename, so Restore puts the old extensions back.</p>
++      <p>Choose <strong>Extensions</strong> at the top of the Renamer. It works on a folder, a ZIP or imported files, subfolders included. Every extension found is listed with its count: type a new one next to any group (<code>-</code> removes it), or use the quick options: letter case, unify spellings (<code>jpeg</code> to <code>jpg</code>, <code>htm</code> to <code>html</code>), fix extensions that do not match the file contents, and add missing ones. In the Preview you can also type an extension on any single file; that one wins over its group. It writes the same undo file as any rename, so Restore puts the old extensions back.</p>
+ 
+       <h2>Restoring on another computer</h2>
+       <p>Undo and backup files store paths relative to the folder or ZIP that was changed, never the full path on your disk, so they travel with the files. On the other computer:</p>
+@@ -183,6 +184,7 @@
+         <li>Supported audio: MP3 (ID3v2.3/2.4 and ID3v1), FLAC, M4A/M4B/AAC/ALAC, OGG Vorbis, Opus, WAV and AIFF. Fragmented MP4 files are not edited.</li>
+         <li>Everything you type and every preset stays in this browser. Nothing is sent anywhere.</li>
+       </ul>
++      <p class="muted app-ver-line" id="guide-ver"></p>
+     </article>
+   </section>
+ </main>
+diff --git a/public/js/app.js b/public/js/app.js
+index 2cdf453..97ad347 100644
+--- a/public/js/app.js
++++ b/public/js/app.js
+@@ -11,6 +11,7 @@ import * as renamer from './renamer/renamer-ui.js';
+ import * as tagger from './tagger/tagger-ui.js';
+ import * as batch from './batch/batch-ui.js';
+ import { AUDIO_EXT } from './tagger/index.js';
++import { versionLabel, versionDetails } from './version.js';
+ 
+ const VIEWS = ['renamer', 'tagger', 'batch', 'history', 'guide'];
+ const $ = (s) => document.querySelector(s);
+@@ -178,8 +179,20 @@ async function restoreFromHistory(rec) {
+ }
+ 
+ /* ------------------------------------------------------------------ boot */
++function initVersion() {
++  const b = $('#app-ver'); const g = $('#guide-ver');
++  if (b) {
++    b.textContent = versionLabel(); b.title = versionDetails();
++    b.addEventListener('click', async () => {
++      try { await navigator.clipboard.writeText(versionDetails()); toast(`Copied: ${versionDetails()}`, { type: 'success' }); } catch { toast(versionDetails()); }
++    });
++  }
++  if (g) g.textContent = versionDetails();
++}
++
+ function boot() {
+   initTheme();
++  initVersion();
+   mountJobTray($('#jobs'));
+   let sig = '';
+   onJobs((list) => { const now = list.map((j) => `${j.id}:${j.status}`).join(); if (now !== sig) { sig = now; if (current === 'history') renderHistory(); } });
+diff --git a/public/js/renamer/extensions.js b/public/js/renamer/extensions.js
+index 8fc7614..46ab029 100644
+--- a/public/js/renamer/extensions.js
++++ b/public/js/renamer/extensions.js
+@@ -15,7 +15,7 @@ export function sameContent(a, b) {
+   return SAME.some((g) => g.includes(a) && g.includes(b));
+ }
+ 
+-export const DEFAULT_EXT_OPTS = { map: {}, case: 'keep', unify: false, fixContent: false, addMissing: false, compound: true };
++export const DEFAULT_EXT_OPTS = { map: {}, files: {}, case: 'keep', unify: false, fixContent: false, addMissing: false, compound: true };
+ 
+ /** Groups files by their exact current extension ('' = none). */
+ export function extGroups(items, { compound = true } = {}) {
+@@ -50,7 +50,7 @@ export function cleanTarget(v) {
+ 
+ /**
+  * New name for one file.
+- * Priority: content fix (or adding a missing one) > your mapping for that extension > unify variants > case.
++ * Priority: extension typed on that file's own row > content fix (or adding a missing one) > your mapping for that extension > unify variants > case.
+  */
+ export function newNameFor(item, o, detected) {
+   const compound = o.compound !== false;
+@@ -58,7 +58,9 @@ export function newNameFor(item, o, detected) {
+   const base = baseOf(item.name, compound);
+   let next = ext;
+   let why = null;
+-  if (o.fixContent && detected && ext && !sameContent(ext, detected)) { next = detected; why = 'content'; }
++  const own = item.path != null && Object.prototype.hasOwnProperty.call(o.files || {}, item.path) ? cleanTarget(o.files[item.path]) : null;
++  if (own !== null) { next = own; why = 'map'; }
++  else if (o.fixContent && detected && ext && !sameContent(ext, detected)) { next = detected; why = 'content'; }
+   else if (o.addMissing && detected && !ext) { next = detected; why = 'content'; }
+   else {
+     const mapped = Object.prototype.hasOwnProperty.call(o.map || {}, ext) ? cleanTarget(o.map[ext]) : null;
+diff --git a/public/js/renamer/renamer-ui.js b/public/js/renamer/renamer-ui.js
+index 416fc99..9694379 100644
+--- a/public/js/renamer/renamer-ui.js
++++ b/public/js/renamer/renamer-ui.js
+@@ -11,7 +11,7 @@ import { RULES, RULE_GROUPS, makeRule, runPipeline, TAG_VARS } from './rules.js'
+ import { analyze } from './analyzer.js';
+ import { BUILTIN_PRESETS, loadUserPresets, addUserPreset, saveUserPresets, exportPresets, importPresets } from './presets.js';
+ import { readTags, AUDIO_EXT } from '../tagger/index.js';
+-import { DEFAULT_EXT_OPTS, extGroups, extensionProposals, newNameFor, needsContent, UNIFY, cleanTarget } from './extensions.js';
++import { DEFAULT_EXT_OPTS, extOf, extGroups, extensionProposals, newNameFor, needsContent, UNIFY, cleanTarget } from './extensions.js';
+ import { detectRemap, countMatches, remapOps, mapPath, currentPathsAfter, isIdentity } from '../core/remap.js';
+ import { remapPanel } from '../core/remap-ui.js';
+ 
+@@ -26,9 +26,9 @@ const DEFAULT_OPTS = {
+ const S = {
+   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
+   excluded: new Set(), items: [], grouped: false, collapsed: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
+-  analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
++  analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {}, files: {} }, pending: null,
+ };
+-try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
++try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {}, files: {} }); } catch { /* ignore */ }
+ 
+ try { Object.assign(S.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
+ try { const r = JSON.parse(localStorage.getItem(RULES_KEY) || 'null'); if (Array.isArray(r)) S.rules = r.filter((x) => RULES[x.type]).map((x) => ({ ...makeRule(x.type, x.opts), enabled: x.enabled !== false })); } catch { /* ignore */ }
+@@ -38,7 +38,7 @@ const saveState = debounce(() => {
+   try {
+     localStorage.setItem(OPTS_KEY, JSON.stringify(S.opts));
+     localStorage.setItem(RULES_KEY, JSON.stringify(S.rules.map(({ type, enabled, opts }) => ({ type, enabled, opts }))));
+-    const { map, ...extRest } = S.ext; localStorage.setItem(EXT_KEY, JSON.stringify(extRest));
++    const { map, files, ...extRest } = S.ext; localStorage.setItem(EXT_KEY, JSON.stringify(extRest));
+   } catch { /* quota */ }
+ }, 400);
+ 
+@@ -155,7 +155,7 @@ export const getRoot = () => S.root;
+ 
+ async function setRoot(root, { keepMode = false } = {}) {
+   if (root.kind === 'dir' && !(await root.verifyPermission(true))) { toast('Write permission is needed to rename files in this folder.', { type: 'warn' }); return; }
+-  S.root = root; S.collapsed.clear(); S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
++  S.root = root; S.ext.files = {}; S.collapsed.clear(); S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
+   if (!keepMode && S.mode === 'restore' && !S.pending) S.mode = 'rename';
+   await scan();
+   if (S.pending) {
+@@ -578,11 +578,36 @@ function renderRow(el, ii) {
+   el.append(
+     h('input', { type: 'checkbox', class: 'check', checked: !S.excluded.has(e.path), 'aria-label': `Include ${e.name}`, onchange: (ev) => { if (ev.target.checked) S.excluded.delete(e.path); else S.excluded.add(e.path); recompute(); } }),
+     h('span', { class: 'pcell' }, h('span', { class: 'pname' }, e.isDir ? icon('folder', 'ic-dir') : null, oldEl), dir ? h('span', { class: 'pdir mono' }, dir) : null),
+-    h('span', { class: 'pcell' }, newEl),
++    h('span', { class: 'pcell' }, S.mode === 'ext' ? extCell(r, newEl) : newEl),
+     h('span', { class: 'pstatus', title: tip, 'aria-label': tip }, ic ? icon(ic) : null),
+   );
+ }
+ 
++/** Extensions mode: the new name plus an optional box to type the extension for this one file. */
++function extCell(r, newEl) {
++  const { e } = r;
++  const own = S.ext.files[e.path] ?? '';
++  const auto = newNameFor(e, { ...S.ext, files: {} }, S.magic.get(e.path) || null).to;
++  const input = h('input', {
++    type: 'text', class: `input mono pext${own !== '' ? ' is-set' : ''}`, value: own, spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off',
++    placeholder: auto || 'keep', title: 'Extension for this file only (- removes it, empty = follow the group)', 'aria-label': `New extension for ${e.name}`,
++    onclick: (ev) => ev.stopPropagation(),
++    onchange: (ev) => { const v = ev.target.value.trim(); if (v === '') delete S.ext.files[e.path]; else S.ext.files[e.path] = v; recompute(); },
++  });
++  // Keep the extension visible: a long base name is shortened with "…" instead of the extension being cut off.
++  let nameEl = newEl;
++  if (r.newName !== e.name && r.status !== 'excluded') {
++    const compound = S.ext.compound !== false;
++    const ne = extOf(r.newName, compound); const oe = extOf(e.name, compound);
++    const base = ne ? r.newName.slice(0, -(ne.length + 1)) : r.newName;
++    const tail = ne ? `.${ne}` : '';
++    nameEl = h('span', { class: 'fname-split mono', title: r.newName },
++      h('span', { class: 'fbase' }, base),
++      tail ? h('span', { class: 'fext' }, tail === (oe ? `.${oe}` : '') ? tail : h('mark', null, tail)) : (oe ? h('mark', { class: 'fext' }, '(no ext)') : null));
++  }
++  return h('span', { class: 'pnew' }, nameEl, input);
++}
++
+ function toggleAll(on) {
+   if (on) S.excluded.clear(); else for (const r of S.rows) S.excluded.add(r.e.path);
+   recompute();
+@@ -631,9 +656,9 @@ function renderExtPanel() {
+     ], o, () => { saveState(); renderExtGroups(); changed(); }),
+     h('div', { class: 'ext-hint', id: 'rn-ext-hint' }),
+     h('div', { class: 'col-head' }, h('h3', null, 'Extensions found'),
+-      btn('Clear typed changes', () => { o.map = {}; renderExtGroups(); changed(); }, { cls: 'btn-sm btn-ghost', ic: 'x' })),
++      btn('Clear typed changes', () => { o.map = {}; o.files = {}; renderExtGroups(); changed(); }, { cls: 'btn-sm btn-ghost', ic: 'x' })),
+     h('div', { class: 'ext-groups', id: 'rn-ext-groups', role: 'list' }),
+-    h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply).'),
++    h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply). You can also type an extension on any single file in the Preview; that wins over the group.'),
+   );
+   renderExtGroups();
+ }
+diff --git a/public/js/version.js b/public/js/version.js
+new file mode 100644
+index 0000000..af6c9d4
+--- /dev/null
++++ b/public/js/version.js
+@@ -0,0 +1,10 @@
++// App version shown in the header and the Guide. The release build (scripts/android/prepare.mjs, Render build)
++// stamps the version, build number and commit below; a plain checkout shows the package.json version as "dev".
++export const APP_VERSION = '1.2.0';
++export const APP_BUILD = '';
++export const APP_COMMIT = '';
++
++/** "v1.2.0 · build 42" (or "v1.2.0 · dev"). */
++export const versionLabel = () => `v${APP_VERSION} · ${APP_BUILD ? `build ${APP_BUILD}` : 'dev'}`;
++/** Everything, for the tooltip and for copying into a bug report. */
++export const versionDetails = () => `NameTag ${APP_VERSION}${APP_BUILD ? `, build ${APP_BUILD}` : ' (dev)'}${APP_COMMIT ? `, commit ${APP_COMMIT}` : ''}`;
+diff --git a/public/sw.js b/public/sw.js
+index 286e99c..5586513 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -3,7 +3,7 @@ const VERSION = 'dev'; // replaced at build time by scripts/stamp-version.mjs
+ const CACHE = `nametag-${VERSION}`;
+ const ASSETS = [
+   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
+-  'js/theme-init.js', 'js/app.js',
++  'js/theme-init.js', 'js/app.js', 'js/version.js',
+   'js/core/utils.js', 'js/core/ui.js', 'js/core/groups.js', 'js/core/browser-ui.js', 'js/core/group-utils.js',
+   'js/core/jobs.js', 'js/core/media-index.js', 'js/core/jobs-ui.js', 'js/core/sources.js', 'js/core/remap.js', 'js/core/remap-ui.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
+   'js/renamer/rules.js', 'js/renamer/analyzer.js', 'js/renamer/presets.js', 'js/renamer/extensions.js', 'js/renamer/renamer-ui.js', 'js/batch/recipes.js', 'js/batch/run.js', 'js/batch/batch-ui.js',
+diff --git a/render.yaml b/render.yaml
+index cc32cc5..6679903 100644
+--- a/render.yaml
++++ b/render.yaml
+@@ -3,7 +3,7 @@ services:
+   - type: web
+     runtime: static
+     name: nametag
+-    buildCommand: node scripts/stamp-version.mjs
++    buildCommand: node scripts/stamp-version.mjs && node scripts/stamp-app-version.mjs
+     staticPublishPath: ./public
+     pullRequestPreviewsEnabled: false
+     headers:
+diff --git a/scripts/android/prepare.mjs b/scripts/android/prepare.mjs
+index 1c22736..adc5ebf 100644
+--- a/scripts/android/prepare.mjs
++++ b/scripts/android/prepare.mjs
+@@ -5,6 +5,7 @@
+ import { readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, mkdirSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { renderAndroidRes } from '../icons/build-icons.mjs';
++import { stampAppVersion } from '../stamp-app-version.mjs';
+ 
+ const root = new URL('../../', import.meta.url).pathname;
+ const app = join(root, 'android/app');
+@@ -49,6 +50,7 @@ edit('src/main/AndroidManifest.xml', (s) => {
+ 
+ // 4. Version and signing from the environment (GitHub Actions); defaults for local builds.
+ const versionName = env('ANDROID_VERSION_NAME', pkg.version);
++stampAppVersion({ version: versionName }); // the app shows the same version as the APK
+ edit('build.gradle', (s) => {
+   let g = s;
+   g = g.replace(/versionCode \d+/, "versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')");
+diff --git a/scripts/stamp-app-version.mjs b/scripts/stamp-app-version.mjs
+new file mode 100644
+index 0000000..4d7997b
+--- /dev/null
++++ b/scripts/stamp-app-version.mjs
+@@ -0,0 +1,23 @@
++// Stamps public/js/version.js with the release version, CI build number and commit, so the running app
++// (header badge and Guide) tells you exactly which build it is.
++// Used by scripts/android/prepare.mjs (APK) and the Render build; safe to run locally.
++import { readFileSync, writeFileSync } from 'node:fs';
++
++const file = new URL('../public/js/version.js', import.meta.url);
++
++export function stampAppVersion({ version, build, commit } = {}) {
++  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
++  const v = version || process.env.ANDROID_VERSION_NAME || pkg.version;
++  const b = String(build ?? process.env.ANDROID_VERSION_CODE ?? process.env.GITHUB_RUN_NUMBER ?? '').replace(/[^\w.-]/g, '');
++  const c = String(commit ?? process.env.GITHUB_SHA ?? process.env.RENDER_GIT_COMMIT ?? '').slice(0, 7).replace(/[^\w]/g, '');
++  const src = readFileSync(file, 'utf8');
++  const out = src
++    .replace(/export const APP_VERSION = '[^']*';/, `export const APP_VERSION = '${String(v).replace(/[^\w.+-]/g, '')}';`)
++    .replace(/export const APP_BUILD = '[^']*';/, `export const APP_BUILD = '${b}';`)
++    .replace(/export const APP_COMMIT = '[^']*';/, `export const APP_COMMIT = '${c}';`);
++  if (!out.includes('APP_BUILD') || out === src && !src.includes(`'${v}'`)) throw new Error('Version markers not found in public/js/version.js');
++  writeFileSync(file, out);
++  console.log(`App version stamped: ${v}${b ? ` build ${b}` : ''}${c ? ` (${c})` : ''}`);
++}
++
++if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) stampAppVersion();
+diff --git a/tests/renamer.test.mjs b/tests/renamer.test.mjs
+index 86aba79..162e79c 100644
+--- a/tests/renamer.test.mjs
++++ b/tests/renamer.test.mjs
+@@ -4,6 +4,7 @@ import { RULES, makeRule, runPipeline } from '../public/js/renamer/rules.js';
+ import { analyze } from '../public/js/renamer/analyzer.js';
+ import { BUILTIN_PRESETS } from '../public/js/renamer/presets.js';
+ import { buildPlan, executeOps, reverseOps, simulateOps } from '../public/js/core/planner.js';
++import { extensionProposals, newNameFor } from '../public/js/renamer/extensions.js';
+ import { MockRoot } from '../public/js/core/sources.js';
+ 
+ const names = ['01_my_song%20name.MP3', '02_another-track (1).MP3', '03_THIRD_song.mp3', '10_last_one.mp3'];
+@@ -58,4 +59,12 @@ t('separator', () => { assert.equal(one('separator', { from: 'space', to: '_' },
+ t('dedupe', () => assert.equal(one('dedupe', {}, 'Song Song - Artist - Artist.mp3'), 'Song - Artist.mp3'));
+ t('foldername', () => { assert.equal(one('foldername', {}, 'x.mp3'), 'Album - x.mp3'); assert.equal(one('foldername', { level: '2', position: 'suffix' }, 'x.mp3'), 'x - Artist.mp3'); });
+ t('every rule has fields, label, icon', () => { for (const [k, d] of Object.entries(RULES)) { assert.ok(d.label && d.icon && d.group && d.desc, k); assert.ok(Array.isArray(d.fields), k); } });
++t('per-file extension wins over group and quick options', () => {
++  const f = [{ path: 'a/x.jpeg', name: 'x.jpeg' }, { path: 'a/y.jpeg', name: 'y.jpeg' }, { path: 'a/z', name: 'z' }, { path: 'a/w.txt', name: 'w.txt' }];
++  const m = extensionProposals(f, { map: { jpeg: 'jpg' }, files: { 'a/y.jpeg': '.PNG', 'a/z': 'md', 'a/w.txt': '-' }, unify: true, compound: true });
++  assert.equal(m.get('a/x.jpeg'), 'x.jpg'); assert.equal(m.get('a/y.jpeg'), 'y.PNG'); assert.equal(m.get('a/z'), 'z.md'); assert.equal(m.get('a/w.txt'), 'w');
++  assert.equal(extensionProposals(f, { map: {}, case: 'lower', files: { 'a/y.jpeg': '  ' } }).get('a/y.jpeg'), 'y.jpeg'); // blank = follow group
++  assert.equal(newNameFor({ name: 'q.mp3' }, { map: {}, files: { 'q.mp3': 'x' } }, null).name, 'q.mp3'); // no path = no override
++});
++t('version label', async () => { const v = await import('../public/js/version.js'); assert.match(v.versionLabel(), /^v\d+\.\d+\.\d+ · (dev|build \w+)$/); assert.ok(v.versionDetails().startsWith('NameTag ')); });
+ console.log(`renamer: ${pass} checks passed`);
