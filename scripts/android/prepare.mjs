@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderAndroidRes } from '../icons/build-icons.mjs';
+import { stampAppVersion } from '../stamp-app-version.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const app = join(root, 'android/app');
@@ -49,6 +50,7 @@ edit('src/main/AndroidManifest.xml', (s) => {
 
 // 4. Version and signing from the environment (GitHub Actions); defaults for local builds.
 const versionName = env('ANDROID_VERSION_NAME', pkg.version);
+stampAppVersion({ version: versionName }); // the app shows the same version as the APK
 edit('build.gradle', (s) => {
   let g = s;
   g = g.replace(/versionCode \d+/, "versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')");

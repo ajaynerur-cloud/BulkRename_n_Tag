@@ -11,7 +11,7 @@ import { RULES, RULE_GROUPS, makeRule, runPipeline, TAG_VARS } from './rules.js'
 import { analyze } from './analyzer.js';
 import { BUILTIN_PRESETS, loadUserPresets, addUserPreset, saveUserPresets, exportPresets, importPresets } from './presets.js';
 import { readTags, AUDIO_EXT } from '../tagger/index.js';
-import { DEFAULT_EXT_OPTS, extGroups, extensionProposals, newNameFor, needsContent, UNIFY, cleanTarget } from './extensions.js';
+import { DEFAULT_EXT_OPTS, extOf, extGroups, extensionProposals, newNameFor, needsContent, UNIFY, cleanTarget } from './extensions.js';
 import { detectRemap, countMatches, remapOps, mapPath, currentPathsAfter, isIdentity } from '../core/remap.js';
 import { remapPanel } from '../core/remap-ui.js';
 
@@ -26,9 +26,9 @@ const DEFAULT_OPTS = {
 const S = {
   el: null, mode: 'rename', root: null, entries: [], candidates: [], rules: [], opts: { ...DEFAULT_OPTS },
   excluded: new Set(), items: [], grouped: false, collapsed: new Set(), plan: null, rows: [], visible: [], search: '', tags: new Map(), magic: new Map(),
-  analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {} }, pending: null,
+  analysis: null, restore: null, list: null, pane: 'preview', ext: { ...DEFAULT_EXT_OPTS, map: {}, files: {} }, pending: null,
 };
-try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {} }); } catch { /* ignore */ }
+try { const e = JSON.parse(localStorage.getItem(EXT_KEY) || 'null'); if (e) Object.assign(S.ext, e, { map: {}, files: {} }); } catch { /* ignore */ }
 
 try { Object.assign(S.opts, JSON.parse(localStorage.getItem(OPTS_KEY) || '{}')); } catch { /* ignore */ }
 try { const r = JSON.parse(localStorage.getItem(RULES_KEY) || 'null'); if (Array.isArray(r)) S.rules = r.filter((x) => RULES[x.type]).map((x) => ({ ...makeRule(x.type, x.opts), enabled: x.enabled !== false })); } catch { /* ignore */ }
@@ -38,7 +38,7 @@ const saveState = debounce(() => {
   try {
     localStorage.setItem(OPTS_KEY, JSON.stringify(S.opts));
     localStorage.setItem(RULES_KEY, JSON.stringify(S.rules.map(({ type, enabled, opts }) => ({ type, enabled, opts }))));
-    const { map, ...extRest } = S.ext; localStorage.setItem(EXT_KEY, JSON.stringify(extRest));
+    const { map, files, ...extRest } = S.ext; localStorage.setItem(EXT_KEY, JSON.stringify(extRest));
   } catch { /* quota */ }
 }, 400);
 
@@ -155,7 +155,7 @@ export const getRoot = () => S.root;
 
 async function setRoot(root, { keepMode = false } = {}) {
   if (root.kind === 'dir' && !(await root.verifyPermission(true))) { toast('Write permission is needed to rename files in this folder.', { type: 'warn' }); return; }
-  S.root = root; S.collapsed.clear(); S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
+  S.root = root; S.ext.files = {}; S.collapsed.clear(); S.excluded.clear(); S.tags.clear(); S.magic.clear(); S.restore = null;
   if (!keepMode && S.mode === 'restore' && !S.pending) S.mode = 'rename';
   await scan();
   if (S.pending) {
@@ -578,9 +578,34 @@ function renderRow(el, ii) {
   el.append(
     h('input', { type: 'checkbox', class: 'check', checked: !S.excluded.has(e.path), 'aria-label': `Include ${e.name}`, onchange: (ev) => { if (ev.target.checked) S.excluded.delete(e.path); else S.excluded.add(e.path); recompute(); } }),
     h('span', { class: 'pcell' }, h('span', { class: 'pname' }, e.isDir ? icon('folder', 'ic-dir') : null, oldEl), dir ? h('span', { class: 'pdir mono' }, dir) : null),
-    h('span', { class: 'pcell' }, newEl),
+    h('span', { class: 'pcell' }, S.mode === 'ext' ? extCell(r, newEl) : newEl),
     h('span', { class: 'pstatus', title: tip, 'aria-label': tip }, ic ? icon(ic) : null),
   );
+}
+
+/** Extensions mode: the new name plus an optional box to type the extension for this one file. */
+function extCell(r, newEl) {
+  const { e } = r;
+  const own = S.ext.files[e.path] ?? '';
+  const auto = newNameFor(e, { ...S.ext, files: {} }, S.magic.get(e.path) || null).to;
+  const input = h('input', {
+    type: 'text', class: `input mono pext${own !== '' ? ' is-set' : ''}`, value: own, spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off',
+    placeholder: auto || 'keep', title: 'Extension for this file only (- removes it, empty = follow the group)', 'aria-label': `New extension for ${e.name}`,
+    onclick: (ev) => ev.stopPropagation(),
+    onchange: (ev) => { const v = ev.target.value.trim(); if (v === '') delete S.ext.files[e.path]; else S.ext.files[e.path] = v; recompute(); },
+  });
+  // Keep the extension visible: a long base name is shortened with "…" instead of the extension being cut off.
+  let nameEl = newEl;
+  if (r.newName !== e.name && r.status !== 'excluded') {
+    const compound = S.ext.compound !== false;
+    const ne = extOf(r.newName, compound); const oe = extOf(e.name, compound);
+    const base = ne ? r.newName.slice(0, -(ne.length + 1)) : r.newName;
+    const tail = ne ? `.${ne}` : '';
+    nameEl = h('span', { class: 'fname-split mono', title: r.newName },
+      h('span', { class: 'fbase' }, base),
+      tail ? h('span', { class: 'fext' }, tail === (oe ? `.${oe}` : '') ? tail : h('mark', null, tail)) : (oe ? h('mark', { class: 'fext' }, '(no ext)') : null));
+  }
+  return h('span', { class: 'pnew' }, nameEl, input);
 }
 
 function toggleAll(on) {
@@ -631,9 +656,9 @@ function renderExtPanel() {
     ], o, () => { saveState(); renderExtGroups(); changed(); }),
     h('div', { class: 'ext-hint', id: 'rn-ext-hint' }),
     h('div', { class: 'col-head' }, h('h3', null, 'Extensions found'),
-      btn('Clear typed changes', () => { o.map = {}; renderExtGroups(); changed(); }, { cls: 'btn-sm btn-ghost', ic: 'x' })),
+      btn('Clear typed changes', () => { o.map = {}; o.files = {}; renderExtGroups(); changed(); }, { cls: 'btn-sm btn-ghost', ic: 'x' })),
     h('div', { class: 'ext-groups', id: 'rn-ext-groups', role: 'list' }),
-    h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply).'),
+    h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply). You can also type an extension on any single file in the Preview; that wins over the group.'),
   );
   renderExtGroups();
 }

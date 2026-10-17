@@ -3,7 +3,7 @@ services:
   - type: web
     runtime: static
     name: nametag
-    buildCommand: node scripts/stamp-version.mjs
+    buildCommand: node scripts/stamp-version.mjs && node scripts/stamp-app-version.mjs
     staticPublishPath: ./public
     pullRequestPreviewsEnabled: false
     headers:

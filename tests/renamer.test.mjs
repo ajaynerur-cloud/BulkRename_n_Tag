@@ -4,6 +4,7 @@ import { RULES, makeRule, runPipeline } from '../public/js/renamer/rules.js';
 import { analyze } from '../public/js/renamer/analyzer.js';
 import { BUILTIN_PRESETS } from '../public/js/renamer/presets.js';
 import { buildPlan, executeOps, reverseOps, simulateOps } from '../public/js/core/planner.js';
+import { extensionProposals, newNameFor } from '../public/js/renamer/extensions.js';
 import { MockRoot } from '../public/js/core/sources.js';
 
 const names = ['01_my_song%20name.MP3', '02_another-track (1).MP3', '03_THIRD_song.mp3', '10_last_one.mp3'];
@@ -58,4 +59,12 @@ t('separator', () => { assert.equal(one('separator', { from: 'space', to: '_' },
 t('dedupe', () => assert.equal(one('dedupe', {}, 'Song Song - Artist - Artist.mp3'), 'Song - Artist.mp3'));
 t('foldername', () => { assert.equal(one('foldername', {}, 'x.mp3'), 'Album - x.mp3'); assert.equal(one('foldername', { level: '2', position: 'suffix' }, 'x.mp3'), 'x - Artist.mp3'); });
 t('every rule has fields, label, icon', () => { for (const [k, d] of Object.entries(RULES)) { assert.ok(d.label && d.icon && d.group && d.desc, k); assert.ok(Array.isArray(d.fields), k); } });
+t('per-file extension wins over group and quick options', () => {
+  const f = [{ path: 'a/x.jpeg', name: 'x.jpeg' }, { path: 'a/y.jpeg', name: 'y.jpeg' }, { path: 'a/z', name: 'z' }, { path: 'a/w.txt', name: 'w.txt' }];
+  const m = extensionProposals(f, { map: { jpeg: 'jpg' }, files: { 'a/y.jpeg': '.PNG', 'a/z': 'md', 'a/w.txt': '-' }, unify: true, compound: true });
+  assert.equal(m.get('a/x.jpeg'), 'x.jpg'); assert.equal(m.get('a/y.jpeg'), 'y.PNG'); assert.equal(m.get('a/z'), 'z.md'); assert.equal(m.get('a/w.txt'), 'w');
+  assert.equal(extensionProposals(f, { map: {}, case: 'lower', files: { 'a/y.jpeg': '  ' } }).get('a/y.jpeg'), 'y.jpeg'); // blank = follow group
+  assert.equal(newNameFor({ name: 'q.mp3' }, { map: {}, files: { 'q.mp3': 'x' } }, null).name, 'q.mp3'); // no path = no override
+});
+t('version label', async () => { const v = await import('../public/js/version.js'); assert.match(v.versionLabel(), /^v\d+\.\d+\.\d+ · (dev|build \w+)$/); assert.ok(v.versionDetails().startsWith('NameTag ')); });
 console.log(`renamer: ${pass} checks passed`);

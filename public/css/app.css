@@ -131,6 +131,9 @@ dd .tape { white-space: normal; word-break: break-all; text-transform: none; let
 }
 .tabs-main a:hover { color: var(--ink); background: var(--panel); }
 .tabs-main a[aria-current='page'] { color: var(--primary); background: var(--primary-soft); }
+.app-ver { flex: none; font: 600 0.7rem/1 var(--mono, ui-monospace, monospace); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 9px; cursor: pointer; white-space: nowrap; }
+.app-ver:hover { color: var(--text, inherit); border-color: var(--primary-line); }
+.app-ver-line { margin-top: 18px; font-size: 0.8rem; }
 .head-actions { display: flex; gap: 6px; align-items: center; }
 
 main { padding: 20px 24px 24px; max-width: 1680px; margin: 0 auto; }
@@ -317,6 +320,14 @@ details.panel:not([open]) { gap: 0; }
 .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pdir { color: var(--muted); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ic-dir { color: var(--primary); width: 16px; height: 16px; }
+.pnew { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pnew .fname, .pnew .fname-split { flex: 1 1 auto; min-width: 0; }
+.fname-split { display: flex; white-space: nowrap; }
+.fname-split .fbase { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.fname-split .fext { flex: none; }
+.fname-split mark { padding: 0 2px; }
+.pext { flex: 0 0 76px; width: 76px; min-height: 28px; padding: 2px 7px; font-size: 0.85em; }
+.pext.is-set { border-color: var(--primary-line); }
 .pstatus { display: grid; place-items: center; }
 .pstatus .ic { width: 16px; height: 16px; }
 .st-ok .pstatus { color: var(--ok); }
@@ -741,6 +752,8 @@ html.is-native-app #install-btn { display: none !important; }
   .prow > .pcell:nth-of-type(1) .fname { color: var(--muted); font-size: 0.85em; }
   .prow > .pstatus { grid-column: 3; grid-row: 1 / 3; }
   .prow .pdir { display: none; }
+  .prow > .pcell:nth-of-type(2) .fname-split::before { content: '→ '; color: var(--primary); white-space: pre; flex: none; }
+  .pext { flex-basis: 64px; width: 64px; }
   .tag-head, .trow { grid-template-columns: 28px minmax(0, 1fr) 40px; }
   .tag-head > :nth-child(n+3):not(:nth-child(6)), .trow > .tcell:not(.tfile):not(.num), .trow > .tcell.num:last-child, .tag-head > :last-child { display: none !important; }
   .tag-head > :nth-child(6), .trow > .tcell.num:nth-child(6) { display: block !important; }

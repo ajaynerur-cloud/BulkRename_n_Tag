@@ -3,7 +3,7 @@ const VERSION = 'dev'; // replaced at build time by scripts/stamp-version.mjs
 const CACHE = `nametag-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/theme-init.js', 'js/app.js',
+  'js/theme-init.js', 'js/app.js', 'js/version.js',
   'js/core/utils.js', 'js/core/ui.js', 'js/core/groups.js', 'js/core/browser-ui.js', 'js/core/group-utils.js',
   'js/core/jobs.js', 'js/core/media-index.js', 'js/core/jobs-ui.js', 'js/core/sources.js', 'js/core/remap.js', 'js/core/remap-ui.js', 'js/core/planner.js', 'js/core/manifest.js', 'js/core/history.js',
   'js/renamer/rules.js', 'js/renamer/analyzer.js', 'js/renamer/presets.js', 'js/renamer/extensions.js', 'js/renamer/renamer-ui.js', 'js/batch/recipes.js', 'js/batch/run.js', 'js/batch/batch-ui.js',

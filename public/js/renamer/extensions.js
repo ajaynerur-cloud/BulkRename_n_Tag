@@ -15,7 +15,7 @@ export function sameContent(a, b) {
   return SAME.some((g) => g.includes(a) && g.includes(b));
 }
 
-export const DEFAULT_EXT_OPTS = { map: {}, case: 'keep', unify: false, fixContent: false, addMissing: false, compound: true };
+export const DEFAULT_EXT_OPTS = { map: {}, files: {}, case: 'keep', unify: false, fixContent: false, addMissing: false, compound: true };
 
 /** Groups files by their exact current extension ('' = none). */
 export function extGroups(items, { compound = true } = {}) {
@@ -50,7 +50,7 @@ export function cleanTarget(v) {
 
 /**
  * New name for one file.
- * Priority: content fix (or adding a missing one) > your mapping for that extension > unify variants > case.
+ * Priority: extension typed on that file's own row > content fix (or adding a missing one) > your mapping for that extension > unify variants > case.
  */
 export function newNameFor(item, o, detected) {
   const compound = o.compound !== false;
@@ -58,7 +58,9 @@ export function newNameFor(item, o, detected) {
   const base = baseOf(item.name, compound);
   let next = ext;
   let why = null;
-  if (o.fixContent && detected && ext && !sameContent(ext, detected)) { next = detected; why = 'content'; }
+  const own = item.path != null && Object.prototype.hasOwnProperty.call(o.files || {}, item.path) ? cleanTarget(o.files[item.path]) : null;
+  if (own !== null) { next = own; why = 'map'; }
+  else if (o.fixContent && detected && ext && !sameContent(ext, detected)) { next = detected; why = 'content'; }
   else if (o.addMissing && detected && !ext) { next = detected; why = 'content'; }
   else {
     const mapped = Object.prototype.hasOwnProperty.call(o.map || {}, ext) ? cleanTarget(o.map[ext]) : null;

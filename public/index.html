@@ -97,6 +97,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="app-head">
   <a class="brand" href="#renamer" aria-label="NameTag home"><img class="brand-icon" src="icons/favicon.svg" width="30" height="30" alt=""><span class="tape tape-logo" aria-hidden="true">NameTag</span></a>
+  <button type="button" class="app-ver" id="app-ver" aria-label="App version. Tap to copy."></button>
   <nav class="tabs-main" aria-label="Sections">
     <a href="#renamer" data-view="renamer"><svg class="ic" aria-hidden="true"><use href="#i-text-cursor-input"/></svg><span>Renamer</span></a>
     <a href="#tagger" data-view="tagger"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>Tag editor</span></a>
@@ -132,7 +133,7 @@
       </ol>
 
       <h2>Changing extensions</h2>
-      <p>Choose <strong>Extensions</strong> at the top of the Renamer. It works on a folder, a ZIP or imported files, subfolders included. Every extension found is listed with its count: type a new one next to any group (<code>-</code> removes it), or use the quick options: letter case, unify spellings (<code>jpeg</code> to <code>jpg</code>, <code>htm</code> to <code>html</code>), fix extensions that do not match the file contents, and add missing ones. It writes the same undo file as any rename, so Restore puts the old extensions back.</p>
+      <p>Choose <strong>Extensions</strong> at the top of the Renamer. It works on a folder, a ZIP or imported files, subfolders included. Every extension found is listed with its count: type a new one next to any group (<code>-</code> removes it), or use the quick options: letter case, unify spellings (<code>jpeg</code> to <code>jpg</code>, <code>htm</code> to <code>html</code>), fix extensions that do not match the file contents, and add missing ones. In the Preview you can also type an extension on any single file; that one wins over its group. It writes the same undo file as any rename, so Restore puts the old extensions back.</p>
 
       <h2>Restoring on another computer</h2>
       <p>Undo and backup files store paths relative to the folder or ZIP that was changed, never the full path on your disk, so they travel with the files. On the other computer:</p>
@@ -183,6 +184,7 @@
         <li>Supported audio: MP3 (ID3v2.3/2.4 and ID3v1), FLAC, M4A/M4B/AAC/ALAC, OGG Vorbis, Opus, WAV and AIFF. Fragmented MP4 files are not edited.</li>
         <li>Everything you type and every preset stays in this browser. Nothing is sent anywhere.</li>
       </ul>
+      <p class="muted app-ver-line" id="guide-ver"></p>
     </article>
   </section>
 </main>

@@ -11,6 +11,7 @@ import * as renamer from './renamer/renamer-ui.js';
 import * as tagger from './tagger/tagger-ui.js';
 import * as batch from './batch/batch-ui.js';
 import { AUDIO_EXT } from './tagger/index.js';
+import { versionLabel, versionDetails } from './version.js';
 
 const VIEWS = ['renamer', 'tagger', 'batch', 'history', 'guide'];
 const $ = (s) => document.querySelector(s);
@@ -178,8 +179,20 @@ async function restoreFromHistory(rec) {
 }
 
 /* ------------------------------------------------------------------ boot */
+function initVersion() {
+  const b = $('#app-ver'); const g = $('#guide-ver');
+  if (b) {
+    b.textContent = versionLabel(); b.title = versionDetails();
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(versionDetails()); toast(`Copied: ${versionDetails()}`, { type: 'success' }); } catch { toast(versionDetails()); }
+    });
+  }
+  if (g) g.textContent = versionDetails();
+}
+
 function boot() {
   initTheme();
+  initVersion();
   mountJobTray($('#jobs'));
   let sig = '';
   onJobs((list) => { const now = list.map((j) => `${j.id}:${j.status}`).join(); if (now !== sig) { sig = now; if (current === 'history') renderHistory(); } });
