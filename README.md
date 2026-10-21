@@ -92,6 +92,7 @@ Choose **Extensions** in the Renamer to change extensions in bulk, for a folder 
 - **Quick options:** letter case (keep, lower, UPPER), unify spelling variants (`jpeg` to `jpg`, `tiff` to `tif`, `htm` to `html`, `mpeg` to `mpg`, `aif` to `aiff`, `yml` to `yaml`), fix extensions that do not match the file contents (reads the first bytes, so a PNG named `.jpg` becomes `.png`), and add missing extensions from content.
 - **Mixed spellings are flagged** (for example `.JPEG`, `.jpeg` and `.jpg` in one folder), with a one-click fix.
 - **It uses the same safety as renames.** Conflicts are checked first, case-only changes go through temporary names, and an undo file is written first (`"tool": "extension"`). Restore puts the old extensions back.
+- **Restore from a .json right in Extensions mode.** When a folder or ZIP is open, the "Restore extensions from a .json file" box at the top lists the extension undo files found inside it (one tap to restore) and has a **Choose restore .json…** button, so you can pick the undo file from disk when it is not inside the folder or ZIP. Without a source open, load the .json first and choose where the files are afterwards.
 
 ### Restoring on another computer
 

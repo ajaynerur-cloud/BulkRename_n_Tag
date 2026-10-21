@@ -1,0 +1,990 @@
+{
+  "app": "NameTag",
+  "type": "rename",
+  "version": 1,
+  "id": "ce106848-6efb-4e82-b3d4-ba417197a364",
+  "createdAt": "2026-10-21T15:05:57.027756+00:00",
+  "root": "BulkRename_n_Tag-main",
+  "source": "zip",
+  "tool": "extension",
+  "pathsRelativeTo": "BulkRename_n_Tag-main",
+  "status": "complete",
+  "rules": [],
+  "stats": {
+    "renamed": 188,
+    "extensions": {
+      "": 3,
+      "md": 2,
+      "json": 6,
+      "patch": 2,
+      "yaml": 1,
+      "yml": 5,
+      "gradle": 3,
+      "properties": 2,
+      "bat": 1,
+      "png": 64,
+      "xml": 7,
+      "java": 6,
+      "jar": 1,
+      "html": 1,
+      "webmanifest": 1,
+      "js": 42,
+      "css": 1,
+      "woff2": 10,
+      "svg": 3,
+      "mjs": 18,
+      "jpg": 1,
+      "m4a": 2,
+      "aiff": 1,
+      "flac": 1,
+      "mp3": 1,
+      "ogg": 1,
+      "opus": 1,
+      "wav": 1
+    }
+  },
+  "operations": [
+    {
+      "kind": "file",
+      "from": "LICENSE",
+      "to": "LICENSE.txt"
+    },
+    {
+      "kind": "file",
+      "from": "README.md",
+      "to": "README.txt"
+    },
+    {
+      "kind": "file",
+      "from": "capacitor.config.json",
+      "to": "capacitor_config.txt"
+    },
+    {
+      "kind": "file",
+      "from": "package-lock.json",
+      "to": "package-lock.txt"
+    },
+    {
+      "kind": "file",
+      "from": "package.json",
+      "to": "package.txt"
+    },
+    {
+      "kind": "file",
+      "from": "per-file-extension.patch",
+      "to": "per-file-extension.txt"
+    },
+    {
+      "kind": "file",
+      "from": "render.yaml",
+      "to": "render.txt"
+    },
+    {
+      "kind": "file",
+      "from": ".github/workflows/android-signing-key.yml",
+      "to": ".github/workflows/android-signing-key.txt"
+    },
+    {
+      "kind": "file",
+      "from": ".github/workflows/android.yml",
+      "to": ".github/workflows/android.txt"
+    },
+    {
+      "kind": "file",
+      "from": ".github/workflows/apply-patch.yml",
+      "to": ".github/workflows/apply-patch.txt"
+    },
+    {
+      "kind": "file",
+      "from": ".github/workflows/screenshots.yml",
+      "to": ".github/workflows/screenshots.txt"
+    },
+    {
+      "kind": "file",
+      "from": ".github/workflows/test.yml",
+      "to": ".github/workflows/test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/README.md",
+      "to": "android/README.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/build.gradle",
+      "to": "android/build.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/gradle.properties",
+      "to": "android/gradle.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/gradlew",
+      "to": "android/gradlew.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/gradlew.bat",
+      "to": "android/gradlew_bat.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/settings.gradle",
+      "to": "android/settings.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/store_icon.png",
+      "to": "android/store_icon.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/twa-manifest.json",
+      "to": "android/twa-manifest.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/build.gradle",
+      "to": "android/app/build.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/AndroidManifest.xml",
+      "to": "android/app/src/main/AndroidManifest.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/java/app/nametag/twa/Application.java",
+      "to": "android/app/src/main/java/app/nametag/twa/Application.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/java/app/nametag/twa/DelegationService.java",
+      "to": "android/app/src/main/java/app/nametag/twa/DelegationService.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/java/app/nametag/twa/LauncherActivity.java",
+      "to": "android/app/src/main/java/app/nametag/twa/LauncherActivity.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-anydpi/shortcut_legacy_background.xml",
+      "to": "android/app/src/main/res/drawable-anydpi/shortcut_legacy_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-hdpi/shortcut_0.png",
+      "to": "android/app/src/main/res/drawable-hdpi/shortcut_0.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-hdpi/shortcut_1.png",
+      "to": "android/app/src/main/res/drawable-hdpi/shortcut_1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-hdpi/shortcut_2.png",
+      "to": "android/app/src/main/res/drawable-hdpi/shortcut_2.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-hdpi/splash.png",
+      "to": "android/app/src/main/res/drawable-hdpi/splash.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-mdpi/shortcut_0.png",
+      "to": "android/app/src/main/res/drawable-mdpi/shortcut_0.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-mdpi/shortcut_1.png",
+      "to": "android/app/src/main/res/drawable-mdpi/shortcut_1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-mdpi/shortcut_2.png",
+      "to": "android/app/src/main/res/drawable-mdpi/shortcut_2.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-mdpi/splash.png",
+      "to": "android/app/src/main/res/drawable-mdpi/splash.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xhdpi/shortcut_0.png",
+      "to": "android/app/src/main/res/drawable-xhdpi/shortcut_0.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xhdpi/shortcut_1.png",
+      "to": "android/app/src/main/res/drawable-xhdpi/shortcut_1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xhdpi/shortcut_2.png",
+      "to": "android/app/src/main/res/drawable-xhdpi/shortcut_2.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xhdpi/splash.png",
+      "to": "android/app/src/main/res/drawable-xhdpi/splash.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxhdpi/shortcut_0.png",
+      "to": "android/app/src/main/res/drawable-xxhdpi/shortcut_0.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxhdpi/shortcut_1.png",
+      "to": "android/app/src/main/res/drawable-xxhdpi/shortcut_1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxhdpi/shortcut_2.png",
+      "to": "android/app/src/main/res/drawable-xxhdpi/shortcut_2.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxhdpi/splash.png",
+      "to": "android/app/src/main/res/drawable-xxhdpi/splash.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxxhdpi/shortcut_0.png",
+      "to": "android/app/src/main/res/drawable-xxxhdpi/shortcut_0.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxxhdpi/shortcut_1.png",
+      "to": "android/app/src/main/res/drawable-xxxhdpi/shortcut_1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxxhdpi/shortcut_2.png",
+      "to": "android/app/src/main/res/drawable-xxxhdpi/shortcut_2.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/drawable-xxxhdpi/splash.png",
+      "to": "android/app/src/main/res/drawable-xxxhdpi/splash.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "to": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "to": "android/app/src/main/res/mipmap-hdpi/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-hdpi/ic_launcher_background.png",
+      "to": "android/app/src/main/res/mipmap-hdpi/ic_launcher_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+      "to": "android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-hdpi/ic_launcher_monochrome.png",
+      "to": "android/app/src/main/res/mipmap-hdpi/ic_launcher_monochrome.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-hdpi/ic_maskable.png",
+      "to": "android/app/src/main/res/mipmap-hdpi/ic_maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "to": "android/app/src/main/res/mipmap-mdpi/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-mdpi/ic_launcher_background.png",
+      "to": "android/app/src/main/res/mipmap-mdpi/ic_launcher_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+      "to": "android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-mdpi/ic_launcher_monochrome.png",
+      "to": "android/app/src/main/res/mipmap-mdpi/ic_launcher_monochrome.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-mdpi/ic_maskable.png",
+      "to": "android/app/src/main/res/mipmap-mdpi/ic_maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "to": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_background.png",
+      "to": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+      "to": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_monochrome.png",
+      "to": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_monochrome.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xhdpi/ic_maskable.png",
+      "to": "android/app/src/main/res/mipmap-xhdpi/ic_maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "to": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_background.png",
+      "to": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "to": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_monochrome.png",
+      "to": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_monochrome.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxhdpi/ic_maskable.png",
+      "to": "android/app/src/main/res/mipmap-xxhdpi/ic_maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "to": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_background.png",
+      "to": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_background.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "to": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_monochrome.png",
+      "to": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_monochrome.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/mipmap-xxxhdpi/ic_maskable.png",
+      "to": "android/app/src/main/res/mipmap-xxxhdpi/ic_maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/raw/web_app_manifest.json",
+      "to": "android/app/src/main/res/raw/web_app_manifest.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/values/colors.xml",
+      "to": "android/app/src/main/res/values/colors.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/values/strings.xml",
+      "to": "android/app/src/main/res/values/strings.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/xml/filepaths.xml",
+      "to": "android/app/src/main/res/xml/filepaths.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/app/src/main/res/xml/shortcuts.xml",
+      "to": "android/app/src/main/res/xml/shortcuts.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/gradle/wrapper/gradle-wrapper.jar",
+      "to": "android/gradle/wrapper/gradle-wrapper_jar.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/gradle/wrapper/gradle-wrapper.properties",
+      "to": "android/gradle/wrapper/gradle-wrapper_properties.txt"
+    },
+    {
+      "kind": "file",
+      "from": "android/store/play-store-icon-512.png",
+      "to": "android/store/play-store-icon-512.txt"
+    },
+    {
+      "kind": "file",
+      "from": "patches/1",
+      "to": "patches/1.txt"
+    },
+    {
+      "kind": "file",
+      "from": "patches/applied/per-file-extension.patch",
+      "to": "patches/applied/per-file-extension.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/index.html",
+      "to": "public/index.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/manifest.webmanifest",
+      "to": "public/manifest.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/sw.js",
+      "to": "public/sw.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/css/app.css",
+      "to": "public/css/app.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/mono-latin-400.woff2",
+      "to": "public/fonts/mono-latin-400.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/mono-latin-600.woff2",
+      "to": "public/fonts/mono-latin-600.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/mono-latin-ext-400.woff2",
+      "to": "public/fonts/mono-latin-ext-400.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/mono-latin-ext-600.woff2",
+      "to": "public/fonts/mono-latin-ext-600.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-400.woff2",
+      "to": "public/fonts/next-latin-400.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-600.woff2",
+      "to": "public/fonts/next-latin-600.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-800.woff2",
+      "to": "public/fonts/next-latin-800.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-ext-400.woff2",
+      "to": "public/fonts/next-latin-ext-400.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-ext-600.woff2",
+      "to": "public/fonts/next-latin-ext-600.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/fonts/next-latin-ext-800.woff2",
+      "to": "public/fonts/next-latin-ext-800.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/apple-touch-icon.png",
+      "to": "public/icons/apple-touch-icon.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/favicon-16.png",
+      "to": "public/icons/favicon-16.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/favicon-32.png",
+      "to": "public/icons/favicon-32.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/favicon.svg",
+      "to": "public/icons/favicon.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-128.png",
+      "to": "public/icons/icon-128.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-144.png",
+      "to": "public/icons/icon-144.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-192.png",
+      "to": "public/icons/icon-192.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-256.png",
+      "to": "public/icons/icon-256.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-384.png",
+      "to": "public/icons/icon-384.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-48.png",
+      "to": "public/icons/icon-48.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-512.png",
+      "to": "public/icons/icon-512.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-72.png",
+      "to": "public/icons/icon-72.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-96.png",
+      "to": "public/icons/icon-96.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon-maskable.svg",
+      "to": "public/icons/icon-maskable.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/icon.svg",
+      "to": "public/icons/icon.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/maskable-192.png",
+      "to": "public/icons/maskable-192.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/maskable-512.png",
+      "to": "public/icons/maskable-512.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/monochrome-512.png",
+      "to": "public/icons/monochrome-512.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/icons/monochrome-96.png",
+      "to": "public/icons/monochrome-96.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/app.js",
+      "to": "public/js/app.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/theme-init.js",
+      "to": "public/js/theme-init.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/version.js",
+      "to": "public/js/version.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/batch/batch-ui.js",
+      "to": "public/js/batch/batch-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/batch/recipes.js",
+      "to": "public/js/batch/recipes.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/batch/run.js",
+      "to": "public/js/batch/run.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/browser-ui.js",
+      "to": "public/js/core/browser-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/group-utils.js",
+      "to": "public/js/core/group-utils.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/groups.js",
+      "to": "public/js/core/groups.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/history.js",
+      "to": "public/js/core/history.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/jobs-ui.js",
+      "to": "public/js/core/jobs-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/jobs.js",
+      "to": "public/js/core/jobs.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/manifest.js",
+      "to": "public/js/core/manifest.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/media-index.js",
+      "to": "public/js/core/media-index.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/planner.js",
+      "to": "public/js/core/planner.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/remap-ui.js",
+      "to": "public/js/core/remap-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/remap.js",
+      "to": "public/js/core/remap.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/sources.js",
+      "to": "public/js/core/sources.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/ui.js",
+      "to": "public/js/core/ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/core/utils.js",
+      "to": "public/js/core/utils.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/renamer/analyzer.js",
+      "to": "public/js/renamer/analyzer.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/renamer/extensions.js",
+      "to": "public/js/renamer/extensions.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/renamer/presets.js",
+      "to": "public/js/renamer/presets.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/renamer/renamer-ui.js",
+      "to": "public/js/renamer/renamer-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/renamer/rules.js",
+      "to": "public/js/renamer/rules.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/bytes.js",
+      "to": "public/js/tagger/bytes.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/flac.js",
+      "to": "public/js/tagger/flac.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/id3.js",
+      "to": "public/js/tagger/id3.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/index.js",
+      "to": "public/js/tagger/index.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/model.js",
+      "to": "public/js/tagger/model.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/mp4.js",
+      "to": "public/js/tagger/mp4.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/mpeg.js",
+      "to": "public/js/tagger/mpeg.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/ogg.js",
+      "to": "public/js/tagger/ogg.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/online.js",
+      "to": "public/js/tagger/online.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/pool.js",
+      "to": "public/js/tagger/pool.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/riff.js",
+      "to": "public/js/tagger/riff.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/tagger-ui.js",
+      "to": "public/js/tagger/tagger-ui.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/tools.js",
+      "to": "public/js/tagger/tools.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/vorbis.js",
+      "to": "public/js/tagger/vorbis.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/js/tagger/worker.js",
+      "to": "public/js/tagger/worker.txt"
+    },
+    {
+      "kind": "file",
+      "from": "public/vendor/jszip.min.js",
+      "to": "public/vendor/jszip_min.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/check.mjs",
+      "to": "scripts/check.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/screenshots.mjs",
+      "to": "scripts/screenshots.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/stamp-app-version.mjs",
+      "to": "scripts/stamp-app-version.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/stamp-version.mjs",
+      "to": "scripts/stamp-version.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/generate-project.mjs",
+      "to": "scripts/android/generate-project.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/prepare.mjs",
+      "to": "scripts/android/prepare.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/twa-config.json",
+      "to": "scripts/android/twa-config.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/java/FoldersPlugin.java",
+      "to": "scripts/android/java/FoldersPlugin.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/java/KeepAliveService.java",
+      "to": "scripts/android/java/KeepAliveService.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/android/java/MainActivity.java",
+      "to": "scripts/android/java/MainActivity.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/icons/build-icons.mjs",
+      "to": "scripts/icons/build-icons.txt"
+    },
+    {
+      "kind": "file",
+      "from": "scripts/icons/icon-src.mjs",
+      "to": "scripts/icons/icon-src.txt"
+    },
+    {
+      "kind": "file",
+      "from": "store/play-store-icon-512.png",
+      "to": "store/play-store-icon-512.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/batch.test.mjs",
+      "to": "tests/batch_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/media-index.test.mjs",
+      "to": "tests/media-index_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/native-mock.mjs",
+      "to": "tests/native-mock.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/native.test.mjs",
+      "to": "tests/native_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/parallel.test.mjs",
+      "to": "tests/parallel_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/portable.test.mjs",
+      "to": "tests/portable_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/renamer.test.mjs",
+      "to": "tests/renamer_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/saf-mock.mjs",
+      "to": "tests/saf-mock.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/saf.test.mjs",
+      "to": "tests/saf_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/tags.test.mjs",
+      "to": "tests/tags_test.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/cover.jpg",
+      "to": "tests/fixtures/cover.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/fast.m4a",
+      "to": "tests/fixtures/fast.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/slow.m4a",
+      "to": "tests/fixtures/slow.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.aiff",
+      "to": "tests/fixtures/t_aiff.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.flac",
+      "to": "tests/fixtures/t_flac.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.mp3",
+      "to": "tests/fixtures/t_mp3.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.ogg",
+      "to": "tests/fixtures/t_ogg.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.opus",
+      "to": "tests/fixtures/t_opus.txt"
+    },
+    {
+      "kind": "file",
+      "from": "tests/fixtures/t.wav",
+      "to": "tests/fixtures/t_wav.txt"
+    }
+  ],
+  "restoredAt": null,
+  "note": "Every file now ends in .txt. Restore with: python restore_extensions.txt (run in the project folder), or in NameTag: Renamer > Extensions > Restore extensions from a .json file."
+}
