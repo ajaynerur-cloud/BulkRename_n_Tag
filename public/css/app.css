@@ -906,3 +906,9 @@ body.fb-open { overflow: hidden; }
   .bt-tagrow { grid-template-columns: 1fr auto; } .bt-tagname { grid-column: 1 / -1; }
 }
 .bt-rules { list-style: none; padding-left: 0; }
+
+/* Extensions mode: restore from a .json */
+.ext-restore { border: 1px solid var(--line, rgba(128,128,128,.3)); border-radius: 10px; padding: .5rem .75rem; margin: .5rem 0 1rem; }
+.ext-restore > summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: .5rem; }
+.ext-restore-found { margin: .5rem 0; }
+.ext-restore .manifest-item .muted { margin-left: .5rem; }

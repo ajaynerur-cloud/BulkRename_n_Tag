@@ -647,6 +647,7 @@ function renderExtPanel() {
   box.append(
     h('div', { class: 'panel-head' }, icon('file-text'), h('h2', null, 'Change extensions')),
     h('p', { class: 'muted' }, 'Works on the open folder, ZIP or imported files, subfolders included. Type a new extension next to a group, or use the quick options. An undo file is written first, like every rename.'),
+    extRestoreBox(),
     renderFields([
       { key: 'case', type: 'segment', label: 'Letter case', options: [['keep', 'Keep'], ['lower', 'lower'], ['upper', 'UPPER']] },
       { key: 'unify', type: 'checkbox', label: 'Unify spelling variants', help: 'jpeg to jpg, tiff to tif, htm to html, mpeg to mpg, aif to aiff, yml to yaml and more.' },
@@ -661,6 +662,52 @@ function renderExtPanel() {
     h('p', { class: 'field-help' }, 'Type the new extension without the dot. Type - to remove an extension. Leave empty to keep it (quick options still apply). You can also type an extension on any single file in the Preview; that wins over the group.'),
   );
   renderExtGroups();
+}
+
+/**
+ * "Restore extensions" box at the top of the Extensions mode. Shown as soon as a folder or ZIP is open:
+ * it lists the extension undo files found inside it (one tap to restore) and always offers to pick a
+ * restore .json from disk, for example the one that came next to a ZIP whose extensions were changed.
+ */
+function extRestoreBox() {
+  const found = h('div', { class: 'ext-restore-found' });
+  const pick = async () => {
+    const [f] = await pickFiles({ accept: '.json,.txt,application/json,text/plain', multiple: false });
+    if (!f) return;
+    try {
+      const mm = parseManifest(await readFileText(f));
+      if (mm.type !== 'rename') throw new Error('This is a tag backup, not an extension undo file. Open it in the Tag editor.');
+      if (!S.root) { S.pendingShown = { manifest: mm, fileName: f.name }; S.mode = 'restore'; render(); return; }
+      S.mode = 'restore';
+      await loadRestore(mm, null, true, null, f.name);
+    } catch (e) { toast(e.message, { type: 'error' }); }
+  };
+  const box = h('details', { class: 'ext-restore', open: S.root ? '' : null },
+    h('summary', null, icon('rotate-ccw'), 'Restore extensions from a .json file'),
+    h('p', { class: 'field-help' }, S.root
+      ? 'Changed the extensions of this folder or ZIP before (for example everything to .txt)? Put the original extensions back from the undo .json that was saved with it.'
+      : 'Open a folder or ZIP first, or load the undo .json now and choose where the files are afterwards.'),
+    found,
+    h('div', { class: 'btn-row' }, btn('Choose restore .json…', pick, { ic: 'file-json', cls: 'btn-sm' })));
+  const root = S.root;
+  const undo = (root?.manifests || []).filter((m) => /^nametag-rename-/i.test(m.name)).sort((a, b) => (a.name < b.name ? 1 : -1));
+  if (root && !undo.length) found.append(h('p', { class: 'f-info' }, icon('info'), h('span', null, 'No undo file inside this source. Choose the restore .json that was saved when the extensions were changed.')));
+  (async () => {
+    const rows = [];
+    for (const m of undo.slice(0, 20)) {
+      try {
+        const mm = parseManifest(await (await m.getFile()).text());
+        if (mm.type === 'rename' && mm.tool === 'extension') rows.push({ m, mm });
+      } catch { /* not readable, skip */ }
+    }
+    if (S.root !== root || !found.isConnected) return;
+    if (rows.length) found.append(h('p', { class: 'field-label' }, `Extension undo file${rows.length > 1 ? 's' : ''} found here`),
+      h('ul', { class: 'manifest-list' }, rows.map(({ m, mm }) => h('li', null,
+        h('button', { type: 'button', class: 'manifest-item', onclick: async () => { S.mode = 'restore'; await loadRestore(mm, m.path); } },
+          icon('file-json'), h('span', { class: 'mono' }, m.path), h('span', { class: 'muted' }, ` ${summarizeManifest(mm)}`))))));
+    else if (undo.length) found.append(h('p', { class: 'muted' }, 'Undo files here are for name changes, not extensions. Use Restore at the top, or choose another .json.'));
+  })();
+  return box;
 }
 
 function renderExtGroups() {
